@@ -98,7 +98,8 @@ def main(options):
 
   # prepare optimizer and loss
   # loss = torch.nn.CrossEntropyLoss()
-  loss = model.Loss.MaxProbLoss()
+  loss = model.Loss.NLLLoss(options.gpuid)
+  # loss = torch.nn.NLLLoss()
   optimizer = eval("torch.optim." + options.optimizer)(parser.parameters(), options.learning_rate)
 
   # main training loop
