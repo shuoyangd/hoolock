@@ -24,6 +24,8 @@ opt_parser =\
 # io & system
 opt_parser.add_argument("--data_file", required=True,
                         help="Preprocessed training data.")
+opt_parser.add_argument("--model_file", required=True,
+                        help="Path where model should be saved.")
 opt_parser.add_argument("--batch_size", default=80, type=int,
                         help="Size of the training batch.")
 opt_parser.add_argument("--dev_batch_size", default=150, type=int,
@@ -54,13 +56,16 @@ opt_parser.add_argument("--stack_size", default=25, type=int,
                         help="Stack size reserved for the stack LSTM components. (default=25)")
 opt_parser.add_argument("--max_step_length", default=150, type=int,
                         help="Maximum step length allowed for decoding.")
+opt_parser.add_argument("--exposure_eps", default=1.0, type=float,
+                        help="The fraction of timesteps where the parser has exposure to" +
+                             "the golden transition operations during training.")
 
 # optimizer
 opt_parser.add_argument("--epochs", default=20, type=int,
                         help="Epochs through the data.")
 opt_parser.add_argument("--optimizer", default="Adam",
                         help="Choice of optimzier: SGD|Adadelta|Adam. (default=Adam)")
-opt_parser.add_argument("--learning_rate", "-lr", default=0.05, type=float,
+opt_parser.add_argument("--learning_rate", "-lr", default=1e-3, type=float,
                         help="Learning rate used across all optimizers. (default=1e-3)")
 opt_parser.add_argument("--momentum", default=0.0, type=float,
                         help="Momentum for SGD. (default=0.0)")
@@ -92,7 +97,8 @@ def main(options):
     parser.cpu()
 
   # prepare optimizer and loss
-  loss = torch.nn.CrossEntropyLoss()
+  # loss = torch.nn.CrossEntropyLoss()
+  loss = model.Loss.MaxProbLoss()
   optimizer = eval("torch.optim." + options.optimizer)(parser.parameters(), options.learning_rate)
 
   # main training loop
@@ -118,11 +124,13 @@ def main(options):
       loss_output.backward()
       optimizer.step()
 
+      """
       train_action_batch = Variable(batchized_train_action[batch_i]) # (seq_len, batch_size) with dynamic seq_len
       post_output_batch = parser(train_data_batch, train_postag_batch, train_action_batch)  # (seq_len, batch_size, len(actions)) with dynamic seq_len
       post_output_batch = post_output_batch.view(-1, len(actions))
       train_action_batch = train_action_batch.view(-1)
       post_loss_output = loss(post_output_batch, train_action_batch)
+      """
 
       logging.debug(loss_output)
       _, pred = output_batch.max(dim=1)
@@ -131,12 +139,12 @@ def main(options):
       # logging.debug("pred: {0}".format(pred))
       # logging.debug("gold: {0}".format(train_action_batch))
 
+      """
       logging.debug(post_loss_output)
       _, post_pred = post_output_batch.max(dim=1)
       hit = sum(map(lambda x: 1 if x[0] == x[1] else 0, zip(post_pred.data.tolist(), train_action_batch.data.tolist())))
       logging.debug("post pred accuracy: {0}".format(hit / len(post_output_batch)))
-
-      pdb.set_trace()
+      """
 
     dev_loss = 0.0
     for i, batch_i in enumerate(range(len(batchized_dev_data))):
@@ -159,6 +167,10 @@ def main(options):
     logging.info("Training loss: {0}".format(loss_output))
     logging.info("Dev loss: {0}".format(dev_loss / i))
 
+    logging.info("Saving model...")
+    torch.save(parser, open(options.model_file + ".{0}".format(epoch_i)), pickle_module=dill)
+    logging.info("Done.")
+
 if __name__ == "__main__":
   ret = opt_parser.parse_known_args()
   options = ret[0]
@@ -168,5 +180,4 @@ if __name__ == "__main__":
           opt_parser.parse_known_args()[1]))
 
   # several options that are pending:
-  options.exposure_eps = 1.0
   main(options)

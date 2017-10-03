@@ -53,6 +53,11 @@ class StackLSTMParser(nn.Module):
     self.actions = actions
     self.postags = postags
 
+    # action mappings
+    self.stack_action_mapping = Variable(torch.zeros(len(actions),).type(self.long_dtype))
+    self.buffer_action_mapping = Variable(torch.zeros(len(actions),).type(self.long_dtype))
+    self.set_action_mappings()
+
     # embeddings
     self.word_emb = nn.Embedding(len(vocab), options.word_emb_dim)
     self.action_emb = nn.Embedding(len(actions), options.action_emb_dim)
@@ -99,7 +104,8 @@ class StackLSTMParser(nn.Module):
         nn.Linear(3 * options.hid_dim, options.state_dim),
         nn.ReLU()
     )
-    self.map_to_actions = nn.Linear(options.state_dim, len(actions))
+    self.state_to_actions = nn.Linear(options.state_dim, len(actions))
+
     self.softmax = nn.Softmax()
 
   def forward(self, tokens, postags=None, actions=None):
@@ -134,8 +140,8 @@ class StackLSTMParser(nn.Module):
     bc = self.c0.repeat(batch_size, 1)
     for t_i in range(seq_len):
       bh, bc = self.pre_buffer(token_comp_output[t_i], (bh, bc)) # (batch_size, self.hid_dim)
-      buffer_hiddens[seq_len - t_i - 1, :, :] = bh.clone()
-      buffer_cells[seq_len - t_i - 1, :, :] = bc.clone()
+      buffer_hiddens[seq_len - t_i - 1, :, :] = bh
+      buffer_cells[seq_len - t_i - 1, :, :] = bc
     # buffer_hidden and buffer_cell need to be reversed because early words needs to be popped first
     # inv_idx = Variable(torch.arange(buffer_hiddens.size(0) - 1, -1, -1).type(self.long_dtype)) # ugly reverse on dim0
     # buffer_hiddens = Variable(buffer_hiddens.data.index_select(0, inv_idx.data))
@@ -162,7 +168,7 @@ class StackLSTMParser(nn.Module):
     for step_i in range(step_length):
       # get action decisions
       summary = self.summarize_states(torch.cat((stack_state, buffer_state, action_state), dim=1)) # (batch_size, self.state_dim)
-      action_dist = self.softmax(self.map_to_actions(summary)) # (batch_size, len(actions))
+      action_dist = self.softmax(self.state_to_actions(summary)) # (batch_size, len(actions))
       outputs[step_i, :, :] = action_dist.clone()
       _, action_i = torch.max(action_dist, dim=1) # (batch_size,)
       # control exposure (only for training)
@@ -171,7 +177,9 @@ class StackLSTMParser(nn.Module):
         batch_exposure = torch.bernoulli(batch_exposure_prob) # (batch_size,)
         action_i = Variable((action_i.data.float() * (1 - batch_exposure.data) + oracle_action_i.data.float() * batch_exposure.data).long()) # (batch_size,)
       # translate action into stack & buffer ops
-      stack_op, buffer_op = self.map_action(action_i.data)
+      # stack_op, buffer_op = self.map_action(action_i.data)
+      stack_op = self.stack_action_mapping.index_select(0, action_i)
+      buffer_op = self.buffer_action_mapping.index_select(0, action_i)
 
       # check boundary conditions, assuming buffer won't be pushed anymore
       stack_pop_boundary = Variable((self.stack.pos == 0).data & (stack_op == -1).data)
@@ -192,6 +200,18 @@ class StackLSTMParser(nn.Module):
 
     return outputs
 
+  def set_action_mappings(self):
+    for idx, astr in enumerate(self.actions):
+      transition = astr.split('|')[0]
+      if self.transSys == TransitionSystems.AER:
+        self.stack_action_mapping[idx], self.buffer_action_mapping[idx] = AER_map.get(transition, (0, 0))
+      elif self.transSys == TransitionSystems.AH:
+        self.stack_action_mapping[idx], self.buffer_action_mapping[idx] = AH_map.get(transition, (0, 0))
+      else:
+        logging.fatal("Unimplemented transition system.")
+        raise NotImplementedError
+
+  """
   def map_action(self, action_i):
     stack_op = []
     buffer_op = []
@@ -213,3 +233,4 @@ class StackLSTMParser(nn.Module):
     stack_op = Variable(torch.LongTensor(stack_op).type(self.long_dtype)) # (batch_size,)
     buffer_op = Variable(torch.LongTensor(buffer_op).type(self.long_dtype)) # (batch_size,)
     return stack_op, buffer_op
+  """

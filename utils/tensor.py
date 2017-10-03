@@ -49,12 +49,13 @@ def advanced_batchize(data, batch_size, pad_index):
     batchized_data.append(batch_tensor)
 
   # last batch
-  batch_data = sorted_data[len(sorted_data) // batch_size * batch_size:]
-  seq_len = len(batch_data[-1])
-  batch_tensor = (torch.ones((seq_len, batch_size)) * pad_index).long()
-  for idx, sent_data in enumerate(batch_data):
-    batch_tensor[0:len(sent_data), idx] = sent_data
-  batchized_data.append(batch_tensor)
+  if len(sorted_data) % batch_size != 0:
+    batch_data = sorted_data[len(sorted_data) // batch_size * batch_size:]
+    seq_len = len(batch_data[-1])
+    batch_tensor = (torch.ones((seq_len, batch_size)) * pad_index).long()
+    for idx, sent_data in enumerate(batch_data):
+      batch_tensor[0:len(sent_data), idx] = sent_data
+    batchized_data.append(batch_tensor)
   return batchized_data, sort_index
 
 def advanced_batchize_no_sort(data, batch_size, pad_index, order=None):
@@ -80,12 +81,13 @@ def advanced_batchize_no_sort(data, batch_size, pad_index, order=None):
     batchized_data.append(batch_tensor)
 
   # last batch
-  batch_data = data[len(data) // batch_size * batch_size:]
-  seq_len = max([len(batch_data[i]) for i in range(len(batch_data))]) # find longest seq
-  batch_tensor = (torch.ones((seq_len, batch_size)) * pad_index).long()
-  for idx, sent_data in enumerate(batch_data):
-    batch_tensor[0:len(sent_data), idx] = sent_data
-  batchized_data.append(batch_tensor)
+  if len(data) % batch_size != 0:
+    batch_data = data[len(data) // batch_size * batch_size:]
+    seq_len = max([len(batch_data[i]) for i in range(len(batch_data))]) # find longest seq
+    batch_tensor = (torch.ones((seq_len, batch_size)) * pad_index).long()
+    for idx, sent_data in enumerate(batch_data):
+      batch_tensor[0:len(sent_data), idx] = sent_data
+    batchized_data.append(batch_tensor)
   return batchized_data
 
 def batchize(tensor, batch_size, pad_index):
