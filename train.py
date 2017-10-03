@@ -169,7 +169,7 @@ def main(options):
     logging.info("Dev loss: {0}".format(dev_loss / i))
 
     logging.info("Saving model...")
-    torch.save(parser, open(options.model_file + ".{0}".format(epoch_i)), pickle_module=dill)
+    torch.save(parser, open(options.model_file + ".{0}".format(epoch_i), 'wb'), pickle_module=dill)
     logging.info("Done.")
 
 if __name__ == "__main__":
