@@ -26,8 +26,8 @@ parser.add_argument("--dev_oracle_file", required=True,
 
 parser.add_argument("--save_data", required=True,
                     help="Path for the binarized training & dev data.")
-parser.add_argument("--vocab_size", default=50000, type=int,
-                    help="Maximum vocabulary size. (default: 50000)")
+parser.add_argument("--vocab_size", default=None, type=int,
+                    help="Maximum vocabulary size. (default: None)")
 parser.add_argument("--sent_len", default=80, type=int,
                     help="Maximum allowed sentence length. (default: 80)")
 parser.add_argument("--action_seq_len", default=150, type=int,
@@ -171,7 +171,10 @@ def main(options):
   actions = []
   for sent in oracle_reader:
     for row in sent:
-      actions.append("|".join(row.values()))
+      action_str = row["OP"]
+      if "DEPREL" in row:
+        action_str += ("|" + row["DEPREL"])
+      actions.append(action_str)
   actions = list(set(actions))
   actions.append("<pad>")
   actions.append("<unk>")

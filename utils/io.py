@@ -81,8 +81,9 @@ class OracleReader:
         pass
       elif row["OP"] == "Left-Arc" or row["OP"] == "Right-Arc":
         row["DEPREL"] = columns[1]
-        row["UPOSTAG"] = columns[2]
-        row["XPOSTAG"] = columns[3]
+        if len(columns) >= 4:
+          row["UPOSTAG"] = columns[2]
+          row["XPOSTAG"] = columns[3]
       else:
         row["UPOSTAG"] = columns[1]
         row["XPOSTAG"] = columns[2]
