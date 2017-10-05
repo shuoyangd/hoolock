@@ -114,7 +114,10 @@ def oracle_indice_mapping_without_padding(path, action2idx):
   for sent in oracle_reader:
     sent_actions = []
     for row in sent:
-      actionidx = action2idx.get("|".join(row.values()), action_unk_idx)
+      action_str = row["OP"]
+      if "DEPREL" in row:
+        action_str += ("|" + row["DEPREL"])
+      actionidx = action2idx.get(action_str, action_unk_idx)
       sent_actions.append(actionidx)
       row_n += 1
       if row_n % 10000 == 0:
@@ -140,7 +143,10 @@ def oracle_indice_mapping(path, action2idx, options):
   for sent in oracle_reader:
     sent_actions = []
     for row in sent:
-      actionidx = action2idx.get("|".join(row.values()), action_unk_idx)
+      action_str = row["OP"]
+      if "DEPREL" in row:
+        action_str += ("|" + row["DEPREL"])
+      actionidx = action2idx.get(action_str, action_unk_idx)
       sent_actions.append(actionidx)
       row_n += 1
       if row_n % 10000 == 0:

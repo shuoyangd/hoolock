@@ -94,7 +94,6 @@ class OracleReader:
   def close(self):
     self.file.close()
 
-
 class OracleWriter:
   def __init__(self, file, actions, pad_idx, total_sent_n):
     self.file = file
@@ -104,7 +103,7 @@ class OracleWriter:
     self.output_sent_n = 0
 
   def writesent(self, sent_actions):
-    for sent_i, sent_len in zip(range(sent_actions.size()[1])):
+    for sent_i in zip(range(sent_actions.size()[1])):
       for action_i in range(sent_actions.size()[0]):
         action_idx = sent_actions.data[action_i][sent_i]
         if action_idx == self.pad_idx:
