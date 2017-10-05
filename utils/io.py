@@ -112,8 +112,9 @@ class OracleWriter:
         action_fields = action_str.split('|')
 
         # pseudo POSTAG
-        # FIXME: should do this for SHIFT as well
-        if action_fields[0] == "Left-Arc" or action_fields[0] == "Right-Arc":
+        if action_fields[0] == "Left-Arc" \
+            or action_fields[0] == "Right-Arc" \
+            or action_fields[0] == "Shift":
           action_fields.append("POSX")
           action_fields.append("POSX")
 
