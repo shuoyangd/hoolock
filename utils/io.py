@@ -5,8 +5,8 @@ import pdb
 logging.basicConfig(format='%(asctime)s %(message)s',
                     datefmt='%m/%d/%Y %I:%M:%S %p')
 
-class CoNLLReader:
 
+class CoNLLReader:
   def __init__(self, file):
     """
 
@@ -15,16 +15,16 @@ class CoNLLReader:
     self.file = file
 
   def __iter__(self):
-      return self
+    return self
 
   def __next__(self):
-    sent = self.readline()
+    sent = self.readsent()
     if sent == []:
       raise StopIteration()
     else:
       return sent
 
-  def readline(self):
+  def readsent(self):
     """
     Assuming CoNLL-U format, where the columns are:
     ID FORM LEMMA UPOSTAG XPOSTAG FEATS HEAD DEPREL DEPS MISC
@@ -51,8 +51,8 @@ class CoNLLReader:
   def close(self):
     self.file.close()
 
-class OracleReader:
 
+class OracleReader:
   def __init__(self, file):
     self.file = file
 
@@ -60,13 +60,13 @@ class OracleReader:
     return self
 
   def __next__(self):
-    sent = self.readline()
+    sent = self.readsent()
     if sent == []:
       raise StopIteration()
     else:
       return sent
 
-  def readline(self):
+  def readsent(self):
     """
     Using oracle format from Peng Qi's code at https://github.com/qipeng/arc-swift,
     but currently do not support transition system ASw (arc-swift)
@@ -81,12 +81,199 @@ class OracleReader:
         pass
       elif row["OP"] == "Left-Arc" or row["OP"] == "Right-Arc":
         row["DEPREL"] = columns[1]
+        row["UPOSTAG"] = columns[2]
+        row["XPOSTAG"] = columns[3]
       else:
         row["UPOSTAG"] = columns[1]
         row["XPOSTAG"] = columns[2]
       sent.append(row)
       row_str = self.file.readline().strip()
     return sent
+
+  def close(self):
+    self.file.close()
+
+
+class OracleWriter:
+  def __init__(self, file, actions, pad_idx, total_sent_n):
+    self.file = file
+    self.actions = actions
+    self.pad_idx = pad_idx
+    self.total_sent_n = total_sent_n
+    self.output_sent_n = 0
+
+  def writesent(self, sent_actions):
+    for sent_i, sent_len in zip(range(sent_actions.size()[1])):
+      for action_i in range(sent_actions.size()[0]):
+        action_idx = sent_actions.data[action_i][sent_i]
+        if action_idx == self.pad_idx:
+          break
+        action_str = self.actions[action_idx]
+        action_fields = action_str.split('|')
+
+        # pseudo POSTAG
+        # FIXME: should do this for SHIFT as well
+        if action_fields[0] == "Left-Arc" or action_fields[0] == "Right-Arc":
+          action_fields.append("POSX")
+          action_fields.append("POSX")
+
+        self.file.write("\t".join(action_fields) + "\n")
+      self.file.write("\n")
+
+      self.output_sent_n += 1
+      if self.output_sent_n >= self.total_sent_n:
+        break
+
+  def close(self):
+    self.file.close()
+
+class Oracle2CoNLLWriter:
+  def __init__(self, file, transSys):
+    self.file = file
+    self.transSys = transSys
+
+  def writesent(self, lines, ref_lines=None):
+    """
+    This function is (almost) blindly copied from Peng Qi's code, with some modifications:
+    https://github.com/qipeng/arc-swift/blob/master/test/test_oracle.py
+
+    :param lines: the oracle of a single sentence
+    :param ref_lines: optional CoNLL reference of the same sentence
+    """
+    stack = [0]
+    Nwords = 0
+    if not ref_lines:
+      for t in lines:
+        if self.transSys in [TransitionSystems.ASw, TransitionSystems.AER, TransitionSystems.AES]:
+          if t["OP"] == 'Shift' or t["OP"] == 'Right-Arc':
+            Nwords += 1
+        elif self.transSys in [TransitionSystems.ASd, TransitionSystems.AH]:
+          if t["OP"] == 'Shift':
+            Nwords += 1
+    else:
+      Nwords = len(ref_lines)
+
+    buf = [i + 1 for i in range(Nwords)]
+
+    parent = [-1 for i in range(Nwords + 1)]
+    output = ["" for i in range(Nwords + 1)]
+
+    pos = ["" for i in range(Nwords + 1)]
+
+    def output_str(idx, head_idx, relation, ref_lines=None):
+      if ref_lines:
+        ref_line = ref_lines[idx - 1] # output is 1-based, ref_lines is 0-based
+        ret = str(ref_line["ID"])
+        ret += ("\t" + ref_line["FORM"])
+        ret += ("\t" + ref_line["LEMMA"])
+        ret += ("\t" + ref_line["UPOSTAG"])
+        ret += ("\t" + ref_line["XPOSTAG"])
+        ret += ("\t" + ref_line["FEATS"])
+        ret += ("\t" + str(head_idx))
+        ret += ("\t" + str(relation))
+        ret += ("\t" + ref_line["DEPS"])
+        ret += ("\t" + ref_line["MISC"])
+      else:
+        ret = "%d\t%s" % (head_idx, relation)
+
+      return ret
+
+    # ret = 0 -> peacefully return
+    # ret = 1 -> premature buffer emptiness
+    # ret = 2 -> premature stack emptiness
+    ret = 0
+    for t in lines:
+      j = None if len(buf) == 0 else buf[0]
+      if not j:
+        ret = 1
+        break
+      if not stack:
+        ret = 2
+        break
+      if self.transSys == TransitionSystems.ASw:
+        if t["OP"] == 'Left-Arc':
+          n = int(t[1]) - 1
+          relation = t[2]
+          parent[stack[n]] = j
+          # output[stack[n]] = "%d\t%s" % (j, relation)
+          output[stack[n]] = output_str(stack[n], j, relation, ref_lines)
+          stack = stack[(n + 1):]
+        elif t["OP"] == 'Right-Arc':
+          pos[j] = t[3]
+          n = int(t[1]) - 1
+          relation = t[2]
+          parent[j] = stack[n]
+          # output[j] = "%d\t%s" % (stack[n], relation)
+          output[j] = output_str(j, stack[n], relation, ref_lines)
+          buf = buf[1:]
+          stack = [j] + stack[n:]
+        else:
+          pos[j] = t[1]
+          stack = [j] + stack
+          buf = buf[1:]
+      elif self.transSys in [TransitionSystems.AES, TransitionSystems.AER]:
+        if t["OP"] == 'Left-Arc':
+          relation = t["DEPREL"]
+          parent[stack[0]] = j
+          # output[stack[0]] = "%d\t%s" % (j, relation)
+          output[stack[0]] = output_str(stack[0], j, relation, ref_lines)
+          stack = stack[1:]
+        elif t["OP"] == 'Right-Arc':
+          pos[j] = t["UPOSTAG"]
+          relation = t["DEPREL"]
+          parent[j] = stack[0]
+          # output[j] = "%d\t%s" % (stack[0], relation)
+          output[j] = output_str(j, stack[0], relation, ref_lines)
+          buf = buf[1:]
+          stack = [j] + stack
+        elif t["OP"] == 'Shift':
+          pos[j] = t["UPOSTAG"]
+          stack = [j] + stack
+          buf = buf[1:]
+        else:
+          stack = stack[1:]
+      elif self.transSys == TransitionSystems.ASd:
+        if t["OP"] == 'Left-Arc':
+          relation = t[1]
+          parent[stack[1]] = stack[0]
+          # output[stack[1]] = "%d\t%s" % (stack[0], relation)
+          output[stack[1]] = output_str(stack[1], stack[0], relation, ref_lines)
+          stack = [stack[0]] + stack[2:]
+        elif t["OP"] == 'Right-Arc':
+          relation = t[1]
+          parent[stack[0]] = stack[1]
+          # output[stack[0]] = "%d\t%s" % (stack[1], relation)
+          output[stack[0]] = output_str(stack[0], stack[1], relation, ref_lines)
+          stack = stack[1:]
+        elif t["OP"] == 'Shift':
+          pos[j] = t[1]
+          stack = [j] + stack
+          buf = buf[1:]
+      elif self.transSys == TransitionSystems.AH:
+        if t["OP"] == 'Left-Arc':
+          relation = t[1]
+          parent[stack[0]] = j
+          # output[stack[0]] = "%d\t%s" % (j, relation)
+          output[stack[0]] = output_str(stack[0], j, relation, ref_lines)
+          stack = stack[1:]
+        elif t["OP"] == 'Right-Arc':
+          relation = t[1]
+          parent[stack[0]] = stack[1]
+          # output[stack[0]] = "%d\t%s" % (stack[1], relation)
+          output[stack[0]] = output_str(stack[0], stack[1], relation, ref_lines)
+          stack = stack[1:]
+        elif t["OP"] == 'Shift':
+          pos[j] = t[1]
+          stack = [j] + stack
+          buf = buf[1:]
+
+    for idx, line in enumerate(output):
+      if output[idx] == "":
+        output[idx] = output_str(idx, -1, "_", ref_lines)
+
+    self.file.write("%s\n\n" % ("\n".join(output[1:])))
+
+    return ret
 
   def close(self):
     self.file.close()

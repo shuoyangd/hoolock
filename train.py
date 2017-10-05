@@ -1,4 +1,3 @@
-import model.Loss
 import model.StackLSTMParser
 import utils.tensor
 import utils.rand
@@ -18,8 +17,9 @@ logging.basicConfig(
 
 opt_parser =\
   argparse.ArgumentParser(description="Reimplementation of\n" +
-                                      "Dyer et al. 2015:\n" +
-                                      "Transition-Based Dependency Parsing with Stack Long Short-Term Memory")
+                                      "Dyer et al. 2015\n" +
+                                      "Transition-Based Dependency Parsing with Stack Long Short-Term Memory.\n" +
+                                      "This is the training code.")
 
 # io & system
 opt_parser.add_argument("--data_file", required=True,
@@ -55,7 +55,7 @@ opt_parser.add_argument("--dropout_rate", default=0.0, type=float,
 opt_parser.add_argument("--stack_size", default=25, type=int,
                         help="Stack size reserved for the stack LSTM components. (default=25)")
 opt_parser.add_argument("--max_step_length", default=150, type=int,
-                        help="Maximum step length allowed for decoding.")
+                        help="Maximum step length allowed for decoding. (default=150)")
 opt_parser.add_argument("--exposure_eps", default=1.0, type=float,
                         help="The fraction of timesteps where the parser has exposure to" +
                              "the golden transition operations during training.")
@@ -98,8 +98,8 @@ def main(options):
 
   # prepare optimizer and loss
   # loss = torch.nn.CrossEntropyLoss()
-  loss = model.Loss.NLLLoss(options.gpuid)
-  # loss = torch.nn.NLLLoss()
+  # loss = model.Loss.NLLLoss(options.gpuid)
+  loss = torch.nn.NLLLoss()
   optimizer = eval("torch.optim." + options.optimizer)(parser.parameters(), options.learning_rate)
 
   # main training loop

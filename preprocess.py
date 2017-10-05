@@ -33,14 +33,13 @@ parser.add_argument("--sent_len", default=80, type=int,
 parser.add_argument("--action_seq_len", default=150, type=int,
                     help="Maximum allowed gold parse sequence length. (default = 150)")
 
-def conll_indice_mapping_without_padding(path, vocab, postag2idx, options):
+def conll_indice_mapping_without_padding(path, vocab, postag2idx):
   """
   Don't do padding on the sentences, so advanced batching could be applied.
 
   :param path:
   :param vocab:
   :param postag2idx:
-  :param options:
   :retrun [(sent_len,)]
   """
   conll_reader = utils.io.CoNLLReader(open(path))
@@ -100,13 +99,12 @@ def conll_indice_mapping(path, vocab, postag2idx, options):
     ret_postags = torch.cat((ret_postags, sent_postags.unsqueeze(0)), dim=0)
   return ret_tokens[1:], ret_postags[1:]
 
-def oracle_indice_mapping_without_padding(path, action2idx, options):
+def oracle_indice_mapping_without_padding(path, action2idx):
   """
   Don't do padding on the sentences, so advanced batching could be applied.
 
   :param path:
   :param action2idx:
-  :param options:
   :return: (num_sent, action_seq_len)
   """
   oracle_reader = utils.io.OracleReader(open(path))
@@ -182,16 +180,16 @@ def main(options):
   # second pass: map data
   logging.info("input indice mapping w/ training...")
   # train_data, train_postag = conll_indice_mapping(options.train_conll_file, vocab, postag2idx, options)
-  train_data, train_postag = conll_indice_mapping_without_padding(options.train_conll_file, vocab, postag2idx, options)
+  train_data, train_postag = conll_indice_mapping_without_padding(options.train_conll_file, vocab, postag2idx)
   logging.info("input indice mapping w/ dev...")
   # dev_data, dev_postag = conll_indice_mapping(options.dev_conll_file, vocab, postag2idx, options)
-  dev_data, dev_postag = conll_indice_mapping_without_padding(options.dev_conll_file, vocab, postag2idx, options)
+  dev_data, dev_postag = conll_indice_mapping_without_padding(options.dev_conll_file, vocab, postag2idx)
   logging.info("oracle indice mapping w/ training...")
   # train_action = oracle_indice_mapping(options.train_oracle_file, action2idx, options)
-  train_action = oracle_indice_mapping_without_padding(options.train_oracle_file, action2idx, options)
+  train_action = oracle_indice_mapping_without_padding(options.train_oracle_file, action2idx)
   logging.info("oracle indice mapping w/ dev...")
   # dev_action = oracle_indice_mapping(options.dev_oracle_file, action2idx, options)
-  dev_action = oracle_indice_mapping_without_padding(options.dev_oracle_file, action2idx, options)
+  dev_action = oracle_indice_mapping_without_padding(options.dev_oracle_file, action2idx)
   torch.save((train_data, train_postag, train_action), open(options.save_data + ".train", 'wb'),
              pickle_module=dill)
   torch.save((dev_data, dev_postag, dev_action), open(options.save_data + ".dev", 'wb'),

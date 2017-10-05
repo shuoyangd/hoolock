@@ -15,7 +15,9 @@ logging.basicConfig(
 class TransitionSystems(Enum):
   ASd = 0
   AER = 1
-  AH = 2
+  AES = 2
+  AH = 3
+  ASw = 4
 
   @classmethod
   def has_value(cls, value):
@@ -106,7 +108,17 @@ class StackLSTMParser(nn.Module):
     )
     self.state_to_actions = nn.Linear(options.state_dim, len(actions))
 
-    self.softmax = nn.Softmax()
+    self.softmax = nn.LogSoftmax()
+
+  def cpu(self):
+    super(StackLSTMParser, self).cpu()
+    self.dtype = torch.FloatTensor
+    self.long_dtype = torch.LongTensor
+
+  def gpu(self):
+    super(StackLSTMParser, self).gpu()
+    self.dtype = torch.cuda.FloatTensor
+    self.long_dtype = torch.cuda.LongTensor
 
   def forward(self, tokens, postags=None, actions=None):
     """
@@ -210,27 +222,3 @@ class StackLSTMParser(nn.Module):
       else:
         logging.fatal("Unimplemented transition system.")
         raise NotImplementedError
-
-  """
-  def map_action(self, action_i):
-    stack_op = []
-    buffer_op = []
-    for a in action_i:
-      action_str = self.actions[a]
-      transition = action_str.split('|')[0]
-      if self.transSys == TransitionSystems.AER:
-        sop, bop = AER_map.get(transition, (0, 0)) # by default don't move
-        stack_op.append(sop)
-        buffer_op.append(bop)
-      elif self.transSys == TransitionSystems.AH:
-        sop, bop = AH_map.get(transition, (0, 0)) # by default don't move
-        stack_op.append(sop)
-        buffer_op.append(bop)
-      else:
-        logging.fatal("Unimplemented transition system.")
-        raise NotImplementedError
-
-    stack_op = Variable(torch.LongTensor(stack_op).type(self.long_dtype)) # (batch_size,)
-    buffer_op = Variable(torch.LongTensor(buffer_op).type(self.long_dtype)) # (batch_size,)
-    return stack_op, buffer_op
-  """
