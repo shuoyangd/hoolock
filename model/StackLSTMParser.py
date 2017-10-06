@@ -141,6 +141,8 @@ class StackLSTMParser(nn.Module):
       token_comp_input = torch.cat((token_comp_input, pos_tag_emb), dim=-1)
     token_comp_output = self.compose_tokens(token_comp_input) # (batch_size, seq_len, input_dim)
     token_comp_output = torch.transpose(token_comp_output, 0, 1) # (seq_len, batch_size, input_dim)
+    rev_idx = Variable(torch.arange(seq_len - 1, -1, -1).type(self.long_dtype))
+    token_comp_output_rev = token_comp_output.index_select(0, rev_idx)
 
     # initialize stack
     self.stack.build_stack(batch_size, self.gpuid)
@@ -148,12 +150,12 @@ class StackLSTMParser(nn.Module):
     # initialize and preload buffer
     buffer_hiddens = Variable(torch.zeros((seq_len, batch_size, self.hid_dim)).type(self.dtype))
     buffer_cells = Variable(torch.zeros((seq_len, batch_size, self.hid_dim)).type(self.dtype))
-    bh = self.h0.repeat(batch_size, 1)
-    bc = self.c0.repeat(batch_size, 1)
+    bh = self.h0.unsqueeze(0).expand(batch_size, 1)
+    bc = self.c0.unsqueeze(0).expand(batch_size, 1)
     for t_i in range(seq_len):
-      bh, bc = self.pre_buffer(token_comp_output[t_i], (bh, bc)) # (batch_size, self.hid_dim)
-      buffer_hiddens[seq_len - t_i - 1, :, :] = bh
-      buffer_cells[seq_len - t_i - 1, :, :] = bc
+      bh, bc = self.pre_buffer(token_comp_output_rev[t_i], (bh, bc)) # (batch_size, self.hid_dim)
+      buffer_hiddens[t_i, :, :] = bh
+      buffer_cells[t_i, :, :] = bc
     # buffer_hidden and buffer_cell need to be reversed because early words needs to be popped first
     # inv_idx = Variable(torch.arange(buffer_hiddens.size(0) - 1, -1, -1).type(self.long_dtype)) # ugly reverse on dim0
     # buffer_hiddens = Variable(buffer_hiddens.data.index_select(0, inv_idx.data))
@@ -164,8 +166,8 @@ class StackLSTMParser(nn.Module):
     stack_state, _ = self.stack.head() # (batch_size, hid_dim)
     buffer_state = self.buffer.head() # (batch_size, hid_dim)
     stack_input = self.token_buffer.head() # (batch_size, input_size)
-    action_state = self.h0.unsqueeze(0).repeat(batch_size, 1) # (batch_size, hid_dim)
-    action_cell = self.c0.unsqueeze(0).repeat(batch_size, 1) # (batch_size, hid_dim)
+    action_state = self.h0.unsqueeze(0).expand(batch_size, 1) # (batch_size, hid_dim)
+    action_cell = self.c0.unsqueeze(0).expand(batch_size, 1) # (batch_size, hid_dim)
 
     # prepare bernoulli probability for exposure indicator
     batch_exposure_prob = Variable(torch.Tensor([self.exposure_eps] * batch_size).type(self.dtype))

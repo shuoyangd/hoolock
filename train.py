@@ -48,8 +48,8 @@ opt_parser.add_argument("--hid_dim", default=100, type=int,
                         help="Size of the LSTM hidden embedding. (default=100)")
 opt_parser.add_argument("--input_dim", default=60, type=int,
                         help="Size of the token composition embedding. (default=60)")
-opt_parser.add_argument("--state_dim", default=100, type=int,
-                        help="Size of the parser state pointer (p_t). (default=100, not clearly stated in paper)")
+opt_parser.add_argument("--state_dim", default=20, type=int,
+                        help="Size of the parser state pointer (p_t). (default=20)")
 opt_parser.add_argument("--dropout_rate", default=0.0, type=float,
                         help="Dropout rate of the LSTM and stack LSTM components. (default=0.0)")
 opt_parser.add_argument("--stack_size", default=25, type=int,
