@@ -150,8 +150,8 @@ class StackLSTMParser(nn.Module):
     # initialize and preload buffer
     buffer_hiddens = Variable(torch.zeros((seq_len, batch_size, self.hid_dim)).type(self.dtype))
     buffer_cells = Variable(torch.zeros((seq_len, batch_size, self.hid_dim)).type(self.dtype))
-    bh = self.h0.unsqueeze(0).expand(batch_size, -1)
-    bc = self.c0.unsqueeze(0).expand(batch_size, -1)
+    bh = self.h0.unsqueeze(0).expand(batch_size, self.hid_dim)
+    bc = self.c0.unsqueeze(0).expand(batch_size, self.hid_dim)
     for t_i in range(seq_len):
       bh, bc = self.pre_buffer(token_comp_output_rev[t_i], (bh, bc)) # (batch_size, self.hid_dim)
       buffer_hiddens[t_i, :, :] = bh
@@ -166,8 +166,8 @@ class StackLSTMParser(nn.Module):
     stack_state, _ = self.stack.head() # (batch_size, hid_dim)
     buffer_state = self.buffer.head() # (batch_size, hid_dim)
     stack_input = self.token_buffer.head() # (batch_size, input_size)
-    action_state = self.h0.unsqueeze(0).expand(batch_size, -1) # (batch_size, hid_dim)
-    action_cell = self.c0.unsqueeze(0).expand(batch_size, -1) # (batch_size, hid_dim)
+    action_state = self.h0.unsqueeze(0).expand(batch_size, self.hid_dim) # (batch_size, hid_dim)
+    action_cell = self.c0.unsqueeze(0).expand(batch_size, self.hid_dim) # (batch_size, hid_dim)
 
     # prepare bernoulli probability for exposure indicator
     batch_exposure_prob = Variable(torch.Tensor([self.exposure_eps] * batch_size).type(self.dtype))
