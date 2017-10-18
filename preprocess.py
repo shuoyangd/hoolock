@@ -33,6 +33,16 @@ parser.add_argument("--sent_len", default=80, type=int,
 parser.add_argument("--action_seq_len", default=150, type=int,
                     help="Maximum allowed gold parse sequence length. (default = 150)")
 
+def make_action_str(oracle_row):
+  action_str = oracle_row["OP"]
+  if "DEPREL" in oracle_row:
+    action_str += ("|" + oracle_row["DEPREL"])
+  if "UPOSTAG" in oracle_row:
+    action_str += ("|" + oracle_row["UPOSTAG"])
+  if "XPOSTAG" in oracle_row:
+    action_str += ("|" + oracle_row["XPOSTAG"])
+  return action_str
+
 def conll_indice_mapping_without_padding(path, vocab, postag2idx):
   """
   Don't do padding on the sentences, so advanced batching could be applied.
@@ -114,9 +124,7 @@ def oracle_indice_mapping_without_padding(path, action2idx):
   for sent in oracle_reader:
     sent_actions = []
     for row in sent:
-      action_str = row["OP"]
-      if "DEPREL" in row:
-        action_str += ("|" + row["DEPREL"])
+      action_str = make_action_str(row)
       actionidx = action2idx.get(action_str, action_unk_idx)
       sent_actions.append(actionidx)
       row_n += 1
@@ -143,9 +151,7 @@ def oracle_indice_mapping(path, action2idx, options):
   for sent in oracle_reader:
     sent_actions = []
     for row in sent:
-      action_str = row["OP"]
-      if "DEPREL" in row:
-        action_str += ("|" + row["DEPREL"])
+      action_str = make_action_str(row)
       actionidx = action2idx.get(action_str, action_unk_idx)
       sent_actions.append(actionidx)
       row_n += 1
@@ -177,10 +183,7 @@ def main(options):
   actions = []
   for sent in oracle_reader:
     for row in sent:
-      action_str = row["OP"]
-      if "DEPREL" in row:
-        action_str += ("|" + row["DEPREL"])
-      actions.append(action_str)
+      actions.append(make_action_str(row))
   actions = list(set(actions))
   actions.append("<pad>")
   actions.append("<unk>")

@@ -108,7 +108,7 @@ class StackLSTMParser(nn.Module):
     )
     self.state_to_actions = nn.Linear(options.state_dim, len(actions))
 
-    self.softmax = nn.Softmax() # LogSoftmax works on first dimension. God knows why.
+    self.softmax = nn.LogSoftmax() # LogSoftmax works on final dimension only for two dimension tensors. Be careful.
 
   def cpu(self):
     super(StackLSTMParser, self).cpu()
@@ -182,7 +182,7 @@ class StackLSTMParser(nn.Module):
     for step_i in range(step_length):
       # get action decisions
       summary = self.summarize_states(torch.cat((stack_state, buffer_state, action_state), dim=1)) # (batch_size, self.state_dim)
-      action_dist = torch.log(self.softmax(self.state_to_actions(summary))) # (batch_size, len(actions))
+      action_dist = self.softmax(self.state_to_actions(summary)) # (batch_size, len(actions))
       outputs[step_i, :, :] = action_dist.clone()
       _, action_i = torch.max(action_dist, dim=1) # (batch_size,)
       # control exposure (only for training)

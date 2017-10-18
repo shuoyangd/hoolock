@@ -38,25 +38,32 @@ def advanced_batchize(data, batch_size, pad_index):
   sorted_data = sorted(data, key=lambda sent: len(sent))
   sort_index = sorted(range(len(data)), key=lambda k: len(data[k]))
   batchized_data = []
+  batchized_mask = []
   # except for last batch
   for start_i in range(0, len(sorted_data) - batch_size, batch_size):
     batch_data = sorted_data[start_i: start_i + batch_size]
     seq_len = len(batch_data[-1])
     batch_tensor = (torch.ones((seq_len, batch_size)) * pad_index).long()
+    mask_tensor = torch.zeros((seq_len, batch_size)).byte()
     for idx, sent_data in enumerate(batch_data):
       # batch_tensor[:, idx] = truncate_or_pad(sent_data, 0, seq_len, pad_index=pad_index)
       batch_tensor[0:len(sent_data), idx] = sent_data
+      mask_tensor[0:len(sent_data), idx] = 1
     batchized_data.append(batch_tensor)
+    batchized_mask.append(mask_tensor)
 
   # last batch
   if len(sorted_data) % batch_size != 0:
     batch_data = sorted_data[len(sorted_data) // batch_size * batch_size:]
     seq_len = len(batch_data[-1])
     batch_tensor = (torch.ones((seq_len, batch_size)) * pad_index).long()
+    mask_tensor = torch.zeros((seq_len, batch_size)).byte()
     for idx, sent_data in enumerate(batch_data):
       batch_tensor[0:len(sent_data), idx] = sent_data
+      mask_tensor[0:len(sent_data), idx] = 1
     batchized_data.append(batch_tensor)
-  return batchized_data, sort_index
+    batchized_mask.append(mask_tensor)
+  return batchized_data, batchized_mask, sort_index
 
 def advanced_batchize_no_sort(data, batch_size, pad_index, order=None):
   """
@@ -70,30 +77,37 @@ def advanced_batchize_no_sort(data, batch_size, pad_index, order=None):
   if order is not None:
     data = [data[i] for i in order]
   batchized_data = []
+  batchized_mask = []
   # except for last batch
   for start_i in range(0, len(data) - batch_size, batch_size):
     batch_data = data[start_i: start_i + batch_size]
-    seq_len = max([len(batch_data[i]) for i in range(len(batch_data))]) # find longest seq
+    seq_len = max([len(batch_data[i]) for i in range(len(batch_data))])  # find longest seq
     batch_tensor = (torch.ones((seq_len, batch_size)) * pad_index).long()
+    mask_tensor = torch.zeros((seq_len, batch_size)).byte()
     for idx, sent_data in enumerate(batch_data):
       # batch_tensor[:, idx] = truncate_or_pad(sent_data, 0, seq_len, pad_index=pad_index)
       batch_tensor[0:len(sent_data), idx] = sent_data
+      mask_tensor[0:len(sent_data), idx] = 1
     batchized_data.append(batch_tensor)
+    batchized_mask.append(mask_tensor)
 
   # last batch
   if len(data) % batch_size != 0:
     batch_data = data[len(data) // batch_size * batch_size:]
-    seq_len = max([len(batch_data[i]) for i in range(len(batch_data))]) # find longest seq
+    seq_len = max([len(batch_data[i]) for i in range(len(batch_data))])  # find longest seq
     batch_tensor = (torch.ones((seq_len, batch_size)) * pad_index).long()
+    mask_tensor = torch.zeros((seq_len, batch_size)).byte()
     for idx, sent_data in enumerate(batch_data):
       batch_tensor[0:len(sent_data), idx] = sent_data
+      mask_tensor[0:len(sent_data), idx] = 1
     batchized_data.append(batch_tensor)
-  return batchized_data
+    batchized_mask.append(mask_tensor)
+  return batchized_data, batchized_mask
 
 def batchize(tensor, batch_size, pad_index):
   """
   Prepare a data with shape (num_instances, seq_len, *)
-  into (⌈num_instances / batch_size⌉, seq_len, batch_size, *),
+  into (ceil(num_instances / batch_size), seq_len, batch_size, *),
   and pad dummy instances when applicable.
 
   :param tensor:
