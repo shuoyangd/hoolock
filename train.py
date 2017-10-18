@@ -116,6 +116,7 @@ def main(options):
         train_data_batch = train_data_batch.cuda()
         train_postag_batch = train_postag_batch.cuda()
         train_action_batch = train_action_batch.cuda()
+        train_action_mask_batch = train_action_mask_batch.cuda()
 
       output_batch = parser(train_data_batch, train_postag_batch, train_action_batch) # (seq_len, batch_size, len(actions)) with dynamic seq_len
       output_batch = output_batch.view(-1, len(actions)) # (seq_len * batch_size, len(actions))
