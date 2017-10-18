@@ -120,7 +120,8 @@ def main(options):
       output_batch = parser(train_data_batch, train_postag_batch, train_action_batch) # (seq_len, batch_size, len(actions)) with dynamic seq_len
       output_batch = output_batch.view(-1, len(actions)) # (seq_len * batch_size, len(actions))
       train_action_batch = train_action_batch.view(-1) # (seq_len * batch_size)
-      output_batch = output_batch.masked_select(train_action_mask_batch).view(-1, len(actions))
+      train_action_mask_batch = train_action_mask_batch.view(-1) # (seq_len * batch_size)
+      output_batch = output_batch.masked_select(train_action_mask_batch.unsqueeze(1).expand(len(train_action_mask_batch), len(actions))).view(-1, len(actions))
       train_action_batch = train_action_batch.masked_select(train_action_mask_batch)
       loss_output = loss(output_batch, train_action_batch)
 
@@ -136,7 +137,7 @@ def main(options):
       post_loss_output = loss(post_output_batch, train_action_batch)
       """
 
-      logging.debug(loss_output)
+      logging.debug(loss_output.data[0])
       _, pred = output_batch.max(dim=1)
       hit = sum(map(lambda x: 1 if x[0] == x[1] else 0, zip(pred.data.tolist(), train_action_batch.data.tolist())))
       logging.debug("pred accuracy: {0}".format(hit / len(output_batch)))
@@ -166,7 +167,7 @@ def main(options):
       output_batch = parser(dev_data_batch, dev_postag_batch, dev_action_batch) # (max_seq_len, dev_batch_size, len(actions))
       output_batch = output_batch[0:len(dev_action_batch), :].view(-1, len(actions))
       dev_action_batch = dev_action_batch[0:len(output_batch), :].view(-1)
-      output_batch = output_batch.masked_select(dev_action_mask_batch).view(-1, len(actions)) # (seq_len * batch_size, len(actions))
+      output_batch = output_batch.masked_select(dev_action_mask_batch.unsqueeze(1).expand(len(dev_action_mask_batch), len(actions))).view(-1, len(actions))
       dev_action_batch = dev_action_batch.masked_select(dev_action_mask_batch) # (seq_len * batch_size)
       batch_dev_loss = loss(output_batch, dev_action_batch)
       dev_loss += batch_dev_loss.data[0]
