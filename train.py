@@ -75,6 +75,8 @@ def main(options):
   use_cuda = (len(options.gpuid) >= 1)
   if options.gpuid:
     cuda.set_device(options.gpuid[0])
+    occupy = torch.rand(1) # occupy gpu asap
+    occupy.cuda()
 
   train_data, train_postag, train_action = torch.load(open(options.data_file + ".train", 'rb'), pickle_module=dill)
   dev_data, dev_postag, dev_action = torch.load(open(options.data_file + ".dev", 'rb'), pickle_module=dill)
