@@ -154,9 +154,6 @@ def main(options):
       logging.debug("post pred accuracy: {0}".format(hit / len(post_output_batch)))
       """
       
-      if i > 5:
-        break
-
     dev_loss = 0.0
     for i, batch_i in enumerate(range(len(batchized_dev_data))):
       logging.debug("{0} dev batch calculated.".format(i))
