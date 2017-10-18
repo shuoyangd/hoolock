@@ -153,6 +153,9 @@ def main(options):
       hit = sum(map(lambda x: 1 if x[0] == x[1] else 0, zip(post_pred.data.tolist(), train_action_batch.data.tolist())))
       logging.debug("post pred accuracy: {0}".format(hit / len(post_output_batch)))
       """
+      
+      if i > 5:
+        break
 
     dev_loss = 0.0
     for i, batch_i in enumerate(range(len(batchized_dev_data))):
@@ -170,6 +173,7 @@ def main(options):
       output_batch = parser(dev_data_batch, dev_postag_batch, dev_action_batch) # (max_seq_len, dev_batch_size, len(actions))
       output_batch = output_batch[0:len(dev_action_batch), :].view(-1, len(actions))
       dev_action_batch = dev_action_batch[0:len(output_batch), :].view(-1)
+      dev_action_mask_batch = dev_action_mask_batch.view(-1)
       output_batch = output_batch.masked_select(dev_action_mask_batch.unsqueeze(1).expand(len(dev_action_mask_batch), len(actions))).view(-1, len(actions))
       dev_action_batch = dev_action_batch.masked_select(dev_action_mask_batch) # (seq_len * batch_size)
       batch_dev_loss = loss(output_batch, dev_action_batch)
