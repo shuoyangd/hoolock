@@ -61,11 +61,10 @@ class StackLSTMParser(nn.Module):
 
     # embeddings
     self.word_emb = nn.Embedding(len(vocab), options.word_emb_dim)
-    self.pre_word_emb = nn.Embedding(len(pre_vocab.itos), pre_vocab.dim)
     self.action_emb = nn.Embedding(len(actions), options.action_emb_dim)
 
     if pre_vocab is not None:
-      # self.pre_word_emb = nn.Embedding(len(pre_vocab), options.pre_word_emb_dim)
+      self.pre_word_emb = nn.Embedding(pre_vocab.vectors.size(0), pre_vocab.dim)
       # initialzie and fixed
       self.pre_word_emb.weight.data = pre_vocab.vectors
       self.pre_word_emb.weight.requires_grad = False

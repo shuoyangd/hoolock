@@ -52,6 +52,8 @@ def check_vocab_integrity(vocab):
   assert ("<unk>" in vocab.itos)
   assert ("<pad>" in vocab.stoi)
   assert ("<unk>" in vocab.stoi)
+  if vocab.vectors is not None:
+    assert len(vocab.vectors) == len(vocab.itos)
 
 
 def conll_indice_mapping_without_padding(path, vocab, postag2idx):
@@ -210,12 +212,12 @@ def main(options):
     emb_dir = os.path.dirname(options.pre_word_emb_file)
     pre_vocab = torchtext.vocab.Vectors(emb_name, cache=emb_dir)
     if "<unk>" not in pre_vocab.itos:
-      pre_vocab.itos.append("<unk>")
       pre_vocab.stoi["<unk>"] = len(pre_vocab.itos)
+      pre_vocab.itos.append("<unk>")
       pre_vocab.vectors = torch.cat((pre_vocab.vectors, torch.rand(1, pre_vocab.dim)), dim=0)
     if "<pad>" not in pre_vocab.itos:
-      pre_vocab.itos.append("<pad>")
       pre_vocab.stoi["<pad>"] = len(pre_vocab.itos)
+      pre_vocab.itos.append("<pad>")
       pre_vocab.vectors = torch.cat((pre_vocab.vectors, torch.rand(1, pre_vocab.dim)), dim=0)
   else:
     pre_vocab = None
