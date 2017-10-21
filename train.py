@@ -97,7 +97,7 @@ def main(options):
   batchized_dev_postag, _, _ = utils.tensor.advanced_batchize(dev_postag, options.dev_batch_size, postags.index("<pad>"))
   batchized_dev_action, batchized_dev_action_mask = utils.tensor.advanced_batchize_no_sort(dev_action, options.dev_batch_size, actions.index("<pad>"), sort_index)
   if use_pretrained_emb:
-    batchized_dev_data_pre, _ = utils.tensor.advanced_batchize_no_sort(dev_data_pre, options.batch_size, pre_vocab.stoi["<pad>"], sort_index)
+    batchized_dev_data_pre, _ = utils.tensor.advanced_batchize_no_sort(dev_data_pre, options.dev_batch_size, pre_vocab.stoi["<pad>"], sort_index)
 
   parser = model.StackLSTMParser.StackLSTMParser(vocab, actions, options, pre_vocab=pre_vocab, postags=postags)
 
@@ -167,7 +167,7 @@ def main(options):
       hit = sum(map(lambda x: 1 if x[0] == x[1] else 0, zip(post_pred.data.tolist(), train_action_batch.data.tolist())))
       logging.debug("post pred accuracy: {0}".format(hit / len(post_output_batch)))
       """
-      
+
     dev_loss = 0.0
     for i, batch_i in enumerate(range(len(batchized_dev_data))):
       logging.debug("{0} dev batch calculated.".format(i))
@@ -197,7 +197,7 @@ def main(options):
       dev_loss += batch_dev_loss.data[0]
 
     logging.info("End of {0} epoch: ".format(epoch_i))
-    logging.info("Training loss: {0}".format(loss_output))
+    # logging.info("Training loss: {0}".format(loss_output.data[0]))
     logging.info("Dev loss: {0}".format(dev_loss / i))
 
     logging.info("Saving model...")
