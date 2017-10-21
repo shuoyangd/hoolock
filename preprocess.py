@@ -2,6 +2,7 @@ import argparse
 import collections
 import dill
 import logging
+import os
 import sys
 import torch
 import torchtext.vocab
@@ -23,6 +24,8 @@ parser.add_argument("--dev_conll_file", required=True,
                     help="The parsed sentences used for dev, in CoNLL-U format.")
 parser.add_argument("--dev_oracle_file", required=True,
                     help="The oracle transition sequence for the dev data.")
+parser.add_argument("--pre_word_emb_file", default=None,
+                    help="Pretrained word embedding, if there is any.")
 
 parser.add_argument("--save_data", required=True,
                     help="Path for the binarized training & dev data.")
@@ -42,6 +45,14 @@ def make_action_str(oracle_row):
   if "XPOSTAG" in oracle_row:
     action_str += ("|" + oracle_row["XPOSTAG"])
   return action_str
+
+
+def check_vocab_integrity(vocab):
+  assert ("<pad>" in vocab.itos)
+  assert ("<unk>" in vocab.itos)
+  assert ("<pad>" in vocab.stoi)
+  assert ("<unk>" in vocab.stoi)
+
 
 def conll_indice_mapping_without_padding(path, vocab, postag2idx):
   """
@@ -73,6 +84,7 @@ def conll_indice_mapping_without_padding(path, vocab, postag2idx):
     ret_tokens.append(sent_tokens)
     ret_postags.append(sent_postags)
   return ret_tokens, ret_postags
+
 
 def conll_indice_mapping(path, vocab, postag2idx, options):
   """
@@ -109,6 +121,7 @@ def conll_indice_mapping(path, vocab, postag2idx, options):
     ret_postags = torch.cat((ret_postags, sent_postags.unsqueeze(0)), dim=0)
   return ret_tokens[1:], ret_postags[1:]
 
+
 def oracle_indice_mapping_without_padding(path, action2idx):
   """
   Don't do padding on the sentences, so advanced batching could be applied.
@@ -134,6 +147,7 @@ def oracle_indice_mapping_without_padding(path, action2idx):
     sent_actions = torch.LongTensor(sent_actions)
     ret_actions.append(sent_actions)
   return ret_actions
+
 
 def oracle_indice_mapping(path, action2idx, options):
   """
@@ -163,6 +177,7 @@ def oracle_indice_mapping(path, action2idx, options):
     ret_actions = torch.cat((ret_actions, sent_actions.unsqueeze(0)), dim=0)
   return ret_actions[1:]
 
+
 def main(options):
   # first pass: collecting vocab
   conll_reader = utils.io.CoNLLReader(open(options.train_conll_file))
@@ -173,7 +188,8 @@ def main(options):
       tokens.append(row["FORM"])
       postags.append(row["UPOSTAG"])
   conll_reader.close()
-  vocab = torchtext.vocab.Vocab(collections.Counter(tokens), max_size=options.vocab_size)
+  vocab = torchtext.vocab.Vocab(collections.Counter(tokens), specials=["<pad>", "<unk>"],
+                                max_size=options.vocab_size)
   postags = list(set(postags))
   postags.append("<pad>")
   postags.append("<unk>")
@@ -189,6 +205,25 @@ def main(options):
   actions.append("<unk>")
   action2idx = dict((pair[1], pair[0]) for pair in enumerate(actions))
 
+  if options.pre_word_emb_file:
+    emb_name = os.path.basename(options.pre_word_emb_file)
+    emb_dir = os.path.dirname(options.pre_word_emb_file)
+    pre_vocab = torchtext.vocab.Vectors(emb_name, cache=emb_dir)
+    if "<unk>" not in pre_vocab.itos:
+      pre_vocab.itos.append("<unk>")
+      pre_vocab.stoi["<unk>"] = len(pre_vocab.itos)
+      pre_vocab.vectors = torch.cat((pre_vocab.vectors, torch.rand(1, pre_vocab.dim)), dim=0)
+    if "<pad>" not in pre_vocab.itos:
+      pre_vocab.itos.append("<pad>")
+      pre_vocab.stoi["<pad>"] = len(pre_vocab.itos)
+      pre_vocab.vectors = torch.cat((pre_vocab.vectors, torch.rand(1, pre_vocab.dim)), dim=0)
+  else:
+    pre_vocab = None
+
+  logging.info("checking vocabulary integrity...")
+  check_vocab_integrity(vocab)
+  check_vocab_integrity(pre_vocab)
+
   # second pass: map data
   logging.info("input indice mapping w/ training...")
   # train_data, train_postag = conll_indice_mapping(options.train_conll_file, vocab, postag2idx, options)
@@ -196,18 +231,29 @@ def main(options):
   logging.info("input indice mapping w/ dev...")
   # dev_data, dev_postag = conll_indice_mapping(options.dev_conll_file, vocab, postag2idx, options)
   dev_data, dev_postag = conll_indice_mapping_without_padding(options.dev_conll_file, vocab, postag2idx)
+  if options.pre_word_emb_file:
+    logging.info("input pre-trained word embedding indice mapping w/ training...")
+    train_data_pre, _ = conll_indice_mapping_without_padding(options.train_conll_file, pre_vocab, postag2idx)
+    logging.info("input pre-trained word embedding indice mapping w/ dev...")
+    dev_data_pre, _ = conll_indice_mapping_without_padding(options.dev_conll_file, pre_vocab, postag2idx)
+
   logging.info("oracle indice mapping w/ training...")
   # train_action = oracle_indice_mapping(options.train_oracle_file, action2idx, options)
   train_action = oracle_indice_mapping_without_padding(options.train_oracle_file, action2idx)
   logging.info("oracle indice mapping w/ dev...")
   # dev_action = oracle_indice_mapping(options.dev_oracle_file, action2idx, options)
   dev_action = oracle_indice_mapping_without_padding(options.dev_oracle_file, action2idx)
+
   torch.save((train_data, train_postag, train_action), open(options.save_data + ".train", 'wb'),
              pickle_module=dill)
   torch.save((dev_data, dev_postag, dev_action), open(options.save_data + ".dev", 'wb'),
              pickle_module=dill)
   torch.save((vocab, postags, actions), open(options.save_data + ".dict", 'wb'),
              pickle_module=dill)
+  if options.pre_word_emb_file:
+    torch.save((train_data_pre, dev_data_pre, pre_vocab), open(options.save_data + ".pre", 'wb'),
+               pickle_module=dill)
+
 
 if __name__ == "__main__":
   ret = parser.parse_known_args()

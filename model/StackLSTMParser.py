@@ -1,6 +1,5 @@
 from enum import Enum
 import logging
-import pdb
 
 import torch
 from torch import nn
@@ -62,12 +61,13 @@ class StackLSTMParser(nn.Module):
 
     # embeddings
     self.word_emb = nn.Embedding(len(vocab), options.word_emb_dim)
+    self.pre_word_emb = nn.Embedding(len(pre_vocab.itos), pre_vocab.dim)
     self.action_emb = nn.Embedding(len(actions), options.action_emb_dim)
 
     if pre_vocab is not None:
-      self.pre_word_emb = nn.Embedding(len(pre_vocab), options.pre_word_emb_dim)
+      # self.pre_word_emb = nn.Embedding(len(pre_vocab), options.pre_word_emb_dim)
       # initialzie and fixed
-      self.pre_word_emb.weight.data = pre_vocab.vectors # FIXME: should use dictionary to load to make sure index agrees
+      self.pre_word_emb.weight.data = pre_vocab.vectors
       self.pre_word_emb.weight.requires_grad = False
     else:
       self.pre_word_emb = None
@@ -80,7 +80,8 @@ class StackLSTMParser(nn.Module):
     # token embdding composition
     token_comp_in_features = options.word_emb_dim # vocab only
     if pre_vocab is not None:
-      token_comp_in_features += options.pre_word_emb_dim
+      # token_comp_in_features += options.pre_word_emb_dim
+      token_comp_in_features += pre_vocab.dim
     if postags is not None:
       token_comp_in_features += options.postag_emb_dim
     self.compose_tokens = nn.Sequential(
@@ -120,7 +121,7 @@ class StackLSTMParser(nn.Module):
     self.dtype = torch.cuda.FloatTensor
     self.long_dtype = torch.cuda.LongTensor
 
-  def forward(self, tokens, postags=None, actions=None):
+  def forward(self, tokens, pre_tokens=None, postags=None, actions=None):
     """
 
     :param tokens: (seq_len, batch_size) tokens of the input sentence, preprocessed as vocabulary indexes
@@ -134,7 +135,7 @@ class StackLSTMParser(nn.Module):
     word_emb = self.word_emb(tokens.t()) # (batch_size, seq_len, word_emb_dim)
     token_comp_input = word_emb
     if self.pre_word_emb is not None:
-      pre_word_emb = self.pre_word_emb(tokens.t()) # (batch_size, seq_len, word_emb_dim)
+      pre_word_emb = self.pre_word_emb(pre_tokens.t()) # (batch_size, seq_len, self.pre_vocab.dim)
       token_comp_input = torch.cat((token_comp_input, pre_word_emb), dim=-1)
     if self.postag_emb is not None and postags is not None:
       pos_tag_emb = self.postag_emb(postags.t()) # (batch_size, seq_len, word_emb_dim)

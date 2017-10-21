@@ -1,6 +1,5 @@
 from model.StackLSTMParser import TransitionSystems
 import logging
-import pdb
 
 logging.basicConfig(format='%(asctime)s %(message)s',
                     datefmt='%m/%d/%Y %I:%M:%S %p')
@@ -112,11 +111,11 @@ class OracleWriter:
         action_fields = action_str.split('|')
 
         # pseudo POSTAG
-        if action_fields[0] == "Left-Arc" \
-            or action_fields[0] == "Right-Arc" \
-            or action_fields[0] == "Shift":
-          action_fields.append("POSX")
-          action_fields.append("POSX")
+        # if action_fields[0] == "Left-Arc" \
+        #     or action_fields[0] == "Right-Arc" \
+        #     or action_fields[0] == "Shift":
+        #   action_fields.append("POSX")
+        #   action_fields.append("POSX")
 
         self.file.write("\t".join(action_fields) + "\n")
       self.file.write("\n")

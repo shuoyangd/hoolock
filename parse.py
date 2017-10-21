@@ -7,6 +7,7 @@ import utils
 
 import argparse
 import logging
+import pdb
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)s: %(message)s',
@@ -46,8 +47,8 @@ def main(options):
   vocab, postags, actions = torch.load(open(options.dict_file, 'rb')) # always load to cpu
   postag2idx = dict((pair[1], pair[0]) for pair in enumerate(postags))
   test_data, test_postag = conll_indice_mapping_without_padding(options.input_file, vocab, postag2idx)
-  batchized_test_data = utils.tensor.advanced_batchize_no_sort(test_data, options.batch_size, vocab.stoi["<pad>"])
-  batchized_test_postag = utils.tensor.advanced_batchize_no_sort(test_postag, options.batch_size, postags.index("<pad>"))
+  batchized_test_data, _ = utils.tensor.advanced_batchize_no_sort(test_data, options.batch_size, vocab.stoi["<pad>"])
+  batchized_test_postag, _ = utils.tensor.advanced_batchize_no_sort(test_postag, options.batch_size, postags.index("<pad>"))
 
   parser = torch.load(open(options.model_file, 'rb'), map_location=lambda storage, loc: storage)
   parser.gpuid = options.gpuid
