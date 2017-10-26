@@ -6,7 +6,9 @@ from torch import cuda
 import utils
 
 import argparse
+import dill
 import logging
+import os
 import pdb
 
 logging.basicConfig(
@@ -24,15 +26,16 @@ opt_parser.add_argument("--input_file", required=True,
                         help="Input to the parser.")
 opt_parser.add_argument("--model_file", required=True,
                         help="Parser model dump.")
-opt_parser.add_argument("--dict_file", required=True,
-                        help="Vocabulary dump.")
+opt_parser.add_argument("--data_file", required=True,
+                        help="Data dump from preprocessing script -- only .dict and .pre are used.")
 opt_parser.add_argument("--output_file", required=True,
                         help="Output parse file.")
+opt_parser.add_argument("--pre_emb_file", default=None,
+                        help="Preprocessed pre-trained word embedding vocabulary file.")
 opt_parser.add_argument("--batch_size", default=80, type=int,
-                        help="Size of the test batch.")
+                        help="Size of the test batch. (default=80)")
 opt_parser.add_argument("--gpuid", default=[], nargs='+', type=int,
                         help="ID of gpu device to use. Empty implies cpu usage.")
-
 # parser model definition
 opt_parser.add_argument("--max_step_length", default=150, type=int,
                         help="Maximum step length allowed for decoding. (default=150)")
@@ -44,11 +47,21 @@ def main(options):
   if options.gpuid:
     cuda.set_device(options.gpuid[0])
 
-  vocab, postags, actions = torch.load(open(options.dict_file, 'rb')) # always load to cpu
+  vocab, postags, actions = torch.load(open(options.data_file + ".dict", 'rb'), pickle_module=dill) # always load to cpu
+  use_pretrained_emb = os.path.isfile(options.data_file + ".pre")
+  if use_pretrained_emb:
+    _, _, pre_vocab = torch.load(open(options.data_file + ".pre", 'rb'), pickle_module=dill)
+  else:
+    pre_vocab = None
+
   postag2idx = dict((pair[1], pair[0]) for pair in enumerate(postags))
   test_data, test_postag = conll_indice_mapping_without_padding(options.input_file, vocab, postag2idx)
+  if use_pretrained_emb:
+    test_data_pre, _ = conll_indice_mapping_without_padding(options.input_file, pre_vocab, postag2idx)
   batchized_test_data, _ = utils.tensor.advanced_batchize_no_sort(test_data, options.batch_size, vocab.stoi["<pad>"])
   batchized_test_postag, _ = utils.tensor.advanced_batchize_no_sort(test_postag, options.batch_size, postags.index("<pad>"))
+  if use_pretrained_emb:
+    batchized_test_data_pre, _ = utils.tensor.advanced_batchize_no_sort(test_data_pre, options.batch_size, pre_vocab.stoi["<pad>"])
 
   parser = torch.load(open(options.model_file, 'rb'), map_location=lambda storage, loc: storage)
   parser.gpuid = options.gpuid
@@ -64,11 +77,17 @@ def main(options):
     logging.debug("{0} batch updates calculated.".format(batch_i))
     test_data_batch = batchized_test_data[batch_i]
     test_postag_batch = batchized_test_postag[batch_i]
+    if use_pretrained_emb:
+      test_data_pre_batch = batchized_test_data_pre[batch_i]
+    else:
+      test_data_pre_batch = None
     if use_cuda:
       test_data_batch.cuda()
       test_postag_batch.cuda()
+      if use_pretrained_emb:
+        test_data_pre_batch.cuda()
 
-    output_batch = parser(test_data_batch, test_postag_batch) # (max_seq_len, batch_size, len(actions))
+    output_batch = parser(test_data_batch, pre_tokens=test_data_pre_batch, postags=test_postag_batch) # (max_seq_len, batch_size, len(actions))
     _, output_actions = output_batch.max(dim=2) # (max_seq_len, batch_size)
     writer.writesent(output_actions)
 

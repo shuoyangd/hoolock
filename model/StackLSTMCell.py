@@ -1,3 +1,4 @@
+from model.MultiLayerLSTMCell import MultiLayerLSTMCell
 import torch
 from torch import nn
 from torch.autograd import Variable
@@ -6,7 +7,7 @@ import pdb
 
 class StackLSTMCell(nn.Module):
 
-  def __init__(self, input_size, hidden_size, dropout_rate, stack_size,
+  def __init__(self, input_size, hidden_size, dropout_rate, stack_size, num_layers=1,
                init_hidden_var=None, init_cell_var=None):
     """
 
@@ -18,8 +19,10 @@ class StackLSTMCell(nn.Module):
     super(StackLSTMCell, self).__init__()
     self.hidden_size = hidden_size
     self.stack_size = stack_size
+    self.num_layers = num_layers
 
-    self.lstm = nn.LSTMCell(input_size, hidden_size)
+    # self.lstm = nn.LSTMCell(input_size, hidden_size)
+    self.lstm = MultiLayerLSTMCell(input_size, hidden_size, num_layers)
     self.nl = nn.Sigmoid()
     self.tan = nn.Tanh()
 
@@ -44,8 +47,8 @@ class StackLSTMCell(nn.Module):
 
     self.pos = Variable(torch.LongTensor([0] * batch_size).type(long_dtype))
 
-    self.hidden_stack = Variable(torch.zeros(self.stack_size + 1, batch_size, self.hidden_size).type(dtype))
-    self.cell_stack = Variable(torch.zeros(self.stack_size + 1, batch_size, self.hidden_size).type(dtype))
+    self.hidden_stack = Variable(torch.zeros(self.stack_size + 1, batch_size, self.hidden_size, self.num_layers).type(dtype))
+    self.cell_stack = Variable(torch.zeros(self.stack_size + 1, batch_size, self.hidden_size, self.num_layers).type(dtype))
 
     # seq_len = preload_hidden.size()[0]
     # if preload_hidden is not None:
@@ -55,8 +58,8 @@ class StackLSTMCell(nn.Module):
     #   self.cell_stack[1:seq_len+1, :, :] = preload_cell
 
     # push start states to the stack
-    self.hidden_stack[0, :, :] = self.initial_hidden.expand((batch_size, self.hidden_size))
-    self.cell_stack[0, :, :] = self.initial_cell.expand((batch_size, self.hidden_size))
+    self.hidden_stack[0, :, :, :] = self.initial_hidden.expand((batch_size, self.num_layers, self.hidden_size)).transpose(2, 1)
+    self.cell_stack[0, :, :, :] = self.initial_cell.expand((batch_size, self.num_layers, self.hidden_size)).transpose(2, 1)
 
   def forward(self, input, op):
     """
@@ -66,27 +69,35 @@ class StackLSTMCell(nn.Module):
     :param op: (batch_size,), stack operations, in batch (-1 means pop, 1 means push, 0 means hold).
     :return: (hidden, cell): both are (batch_size, hidden_dim)
     """
-    cur_hidden = self.hidden_stack[self.pos.data, range(len(self.pos)), :].clone()
-    cur_cell = self.cell_stack[self.pos.data, range(len(self.pos)), :].clone()
-    prev_hidden = self.hidden_stack[((self.pos - 1) % (self.stack_size + 1)).data, range(len(self.pos)), :].clone()
-    prev_cell = self.cell_stack[((self.pos - 1) % (self.stack_size + 1)).data, range(len(self.pos)), :].clone()
+    cur_hidden = self.hidden_stack[self.pos.data, range(len(self.pos)), :, :].clone()  # (batch_size, hidden_size, num_layers)
+    cur_cell = self.cell_stack[self.pos.data, range(len(self.pos)), :, :].clone()  # (batch_size, hidden_size, num_layers)
+    prev_hidden = self.hidden_stack[((self.pos - 1) % (self.stack_size + 1)).data, range(len(self.pos)), :, :].clone()
+    prev_cell = self.cell_stack[((self.pos - 1) % (self.stack_size + 1)).data, range(len(self.pos)), :, :].clone()
 
-    next_hidden, next_cell = self.lstm(input, (cur_hidden, cur_cell))
+    next_hidden, next_cell = self.lstm(input, (prev_hidden, prev_cell))
 
-    self.hidden_stack[(self.pos + 1).data, range(len(self.pos)), :] = next_hidden
-    self.cell_stack[(self.pos + 1).data, range(len(self.pos)), :] = next_cell
+    self.hidden_stack[(self.pos + 1).data, range(len(self.pos)), :, :] = next_hidden
+    self.cell_stack[(self.pos + 1).data, range(len(self.pos)), :, :] = next_cell
+
+    # we only care about the hidden & cell states of the last layer for return values
+    cur_hidden_ret = cur_hidden[:, :, -1]
+    cur_cell_ret = cur_cell[:, :, -1]
+    next_hidden_ret = next_hidden[:, :, -1]
+    next_cell_ret = next_cell[:, :, -1]
+    prev_hidden_ret = prev_hidden[:, :, -1]
+    prev_cell_ret = prev_cell[:, :, -1]
 
     # all return decision are here
     # push/pop
-    hidden_ret = torch.mm(next_hidden.t(), torch.diag(1 + op).float()) + \
-          torch.mm(prev_hidden.t(), torch.diag(1 + (-1) * op).float())
-    cell_ret = torch.mm(next_cell.t(), torch.diag(1 + op).float()) + \
-          torch.mm(prev_cell.t(), torch.diag(1 + (-1) * op).float())
+    hidden_ret = torch.mm(next_hidden_ret.t(), torch.diag(1 + op).float()) + \
+          torch.mm(prev_hidden_ret.t(), torch.diag(1 + (-1) * op).float())
+    cell_ret = torch.mm(next_cell_ret.t(), torch.diag(1 + op).float()) + \
+          torch.mm(prev_cell_ret.t(), torch.diag(1 + (-1) * op).float())
     # move/hold
     hidden_ret = torch.mm(hidden_ret, torch.diag(torch.abs(op)).float()) + \
-          torch.mm(cur_hidden.t(), torch.diag(1 + (-1) * torch.abs(op)).float())
+          torch.mm(cur_hidden_ret.t(), torch.diag(1 + (-1) * torch.abs(op)).float())
     cell_ret = torch.mm(cell_ret, torch.diag(torch.abs(op)).float()) + \
-          torch.mm(cur_cell.t(), torch.diag(1 + (-1) * torch.abs(op)).float())
+          torch.mm(cur_cell_ret.t(), torch.diag(1 + (-1) * torch.abs(op)).float())
 
     # position overflow/underflow protection should not be done here,
     # they may not be desirable depending on the application
@@ -108,8 +119,8 @@ class StackLSTMCell(nn.Module):
 
   def head(self):
     dtype = self.hidden_stack.long().data.type()
-    return self.hidden_stack[self.pos.data, torch.arange(0, len(self.pos)).type(dtype), :] ,\
-           self.cell_stack[self.pos.data, torch.arange(0, len(self.pos)).type(dtype), :]
+    return self.hidden_stack[self.pos.data, torch.arange(0, len(self.pos)).type(dtype), :][:, :, -1] ,\
+           self.cell_stack[self.pos.data, torch.arange(0, len(self.pos)).type(dtype), :][:, :, -1]
 
 class BatchedToyStackModel(nn.Module):
 
@@ -117,7 +128,7 @@ class BatchedToyStackModel(nn.Module):
     super(BatchedToyStackModel, self).__init__()
 
     self.emb = nn.Embedding(vocab_size, emb_dim) # 50 dimension embedding of 0 and 1
-    self.srnn = StackLSTMCell(emb_dim, hid_dim, 0, stack_size)
+    self.srnn = StackLSTMCell(emb_dim, hid_dim, 0, stack_size, 2)
     self.final = nn.Linear(hid_dim, vocab_size)
     self.sfmax = nn.LogSoftmax()
 
@@ -197,7 +208,7 @@ if __name__ == "__main__":
   VOCAB_SIZE = 250
   BATCH_SIZE = 5
 
-  MAX_EPOCH = 10
+  MAX_EPOCH = 15
 
   # reproducibility
   torch.manual_seed(1)
@@ -211,12 +222,13 @@ if __name__ == "__main__":
   SEQLEN_t = 30
   assert(SEQLEN_t <= SEQLEN)
 
-  X_t, P_t, Y_t = gen_data(VOCAB_SIZE, SEQN_t, SEQLEN_t, 2)
+  X_t, P_t, Y_t = gen_data(VOCAB_SIZE, SEQN_t, SEQLEN_t, 1)
   Y_t = Y_t.permute(0, 2, 1).contiguous() # make sure the flattened golden labels are correct
 
   model = BatchedToyStackModel(EMB_DIM, HID_DIM, STACK_SIZE, VOCAB_SIZE)
   criterion = nn.NLLLoss()
-  optimizer = torch.optim.Adadelta(model.parameters())
+  # optimizer = torch.optim.Adadelta(model.parameters())
+  optimizer = torch.optim.Adam(model.parameters())
 
   for n in range(MAX_EPOCH):
     print("epoch {0}".format(n))

@@ -5,7 +5,8 @@ import torch
 from torch import nn
 from torch.autograd import Variable
 from model.StackLSTMCell import StackLSTMCell
-from model.BufferLSTMCell import BufferLSTMCell
+from model.LSTMStateBufferCell import LSTMStateBufferCell
+from model.MultiLayerLSTMCell import MultiLayerLSTMCell
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)s: %(message)s',
@@ -42,6 +43,7 @@ class StackLSTMParser(nn.Module):
     self.max_step_length = options.max_step_length
     self.transSys = options.transSys
     self.exposure_eps = options.exposure_eps
+    self.num_lstm_layers = options.num_lstm_layers
 
     # gpu
     self.gpuid = options.gpuid
@@ -95,10 +97,10 @@ class StackLSTMParser(nn.Module):
     self.c0 = nn.Parameter(torch.rand(options.hid_dim,).type(self.dtype))
     # FIXME: there is no dropout in StackLSTMCell at this moment
     # BufferLSTM could have 0 or 2 parameters, depending on what is passed for initial hidden and cell state
-    self.stack = StackLSTMCell(options.input_dim, options.hid_dim, options.dropout_rate, options.stack_size, self.h0, self.c0)
-    self.buffer = BufferLSTMCell(options.hid_dim, self.h0, self.c0)
-    self.token_buffer = BufferLSTMCell(options.input_dim) # elememtns in this buffer has size input_dim so h0 and c0 won't fit
-    self.pre_buffer = nn.LSTMCell(input_size=options.input_dim, hidden_size=options.hid_dim) # FIXME: dropout needs to be implemented manually
+    self.stack = StackLSTMCell(options.input_dim, options.hid_dim, options.dropout_rate, options.stack_size, options.num_lstm_layers, self.h0, self.c0)
+    self.buffer = LSTMStateBufferCell(options.hid_dim, self.h0, self.c0)
+    self.token_buffer = LSTMStateBufferCell(options.input_dim) # elememtns in this buffer has size input_dim so h0 and c0 won't fit
+    self.pre_buffer = MultiLayerLSTMCell(input_size=options.input_dim, hidden_size=options.hid_dim, num_layers=options.num_lstm_layers) # FIXME: dropout needs to be implemented manually
     self.history = nn.LSTMCell(input_size=options.action_emb_dim, hidden_size=options.hid_dim) # FIXME: dropout needs to be implemented manually
 
     # parser state and softmax
@@ -150,16 +152,12 @@ class StackLSTMParser(nn.Module):
     # initialize and preload buffer
     buffer_hiddens = Variable(torch.zeros((seq_len, batch_size, self.hid_dim)).type(self.dtype))
     buffer_cells = Variable(torch.zeros((seq_len, batch_size, self.hid_dim)).type(self.dtype))
-    bh = self.h0.unsqueeze(0).expand(batch_size, self.hid_dim)
-    bc = self.c0.unsqueeze(0).expand(batch_size, self.hid_dim)
+    bh = self.h0.unsqueeze(0).unsqueeze(2).expand(batch_size, self.hid_dim, self.num_lstm_layers)
+    bc = self.c0.unsqueeze(0).unsqueeze(2).expand(batch_size, self.hid_dim, self.num_lstm_layers)
     for t_i in range(seq_len):
-      bh, bc = self.pre_buffer(token_comp_output_rev[t_i], (bh, bc)) # (batch_size, self.hid_dim)
-      buffer_hiddens[t_i, :, :] = bh
-      buffer_cells[t_i, :, :] = bc
-    # buffer_hidden and buffer_cell need to be reversed because early words needs to be popped first
-    # inv_idx = Variable(torch.arange(buffer_hiddens.size(0) - 1, -1, -1).type(self.long_dtype)) # ugly reverse on dim0
-    # buffer_hiddens = Variable(buffer_hiddens.data.index_select(0, inv_idx.data))
-    # buffer_cells = Variable(buffer_cells.data.index_select(0, inv_idx.data))
+      bh, bc = self.pre_buffer(token_comp_output_rev[t_i], (bh, bc)) # (batch_size, self.hid_dim, self.num_lstm_layers)
+      buffer_hiddens[t_i, :, :] = bh[:, :, -1]
+      buffer_cells[t_i, :, :] = bc[:, :, -1]
     self.buffer.build_stack(buffer_hiddens, buffer_cells, self.gpuid)
     self.token_buffer.build_stack(token_comp_output, Variable(torch.zeros(token_comp_output.size())), self.gpuid) # don't need cell for this
 

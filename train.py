@@ -58,6 +58,8 @@ opt_parser.add_argument("--max_step_length", default=150, type=int,
 opt_parser.add_argument("--exposure_eps", default=1.0, type=float,
                         help="The fraction of timesteps where the parser has exposure to" +
                              "the golden transition operations during training.")
+opt_parser.add_argument("--num_lstm_layers", default=2, type=int,
+                        help="Number of StackLSTM and buffer-side LSTM layers. (default=2)")
 
 # optimizer
 opt_parser.add_argument("--epochs", default=20, type=int,
@@ -136,6 +138,7 @@ def main(options):
 
       output_batch = parser(train_data_batch, train_data_pre_batch, train_postag_batch, train_action_batch) # (seq_len, batch_size, len(actions)) with dynamic seq_len
       output_batch = output_batch.view(-1, len(actions)) # (seq_len * batch_size, len(actions))
+      # train_action_batch_archiv = train_action_batch.clone()
       train_action_batch = train_action_batch.view(-1) # (seq_len * batch_size)
       train_action_mask_batch = train_action_mask_batch.view(-1) # (seq_len * batch_size)
       output_batch = output_batch.masked_select(train_action_mask_batch.unsqueeze(1).expand(len(train_action_mask_batch), len(actions))).view(-1, len(actions))
@@ -158,6 +161,7 @@ def main(options):
       _, pred = output_batch.max(dim=1)
       hit = sum(map(lambda x: 1 if x[0] == x[1] else 0, zip(pred.data.tolist(), train_action_batch.data.tolist())))
       logging.debug("pred accuracy: {0}".format(hit / len(output_batch)))
+      # train_action_batch = train_action_batch_archiv
       # logging.debug("pred: {0}".format(pred))
       # logging.debug("gold: {0}".format(train_action_batch))
 

@@ -4,7 +4,7 @@ from torch.autograd import Variable
 
 import pdb
 
-class BufferLSTMCell(nn.Module):
+class LSTMStateBufferCell(nn.Module):
   """
   Think of this as a "neutered" StackLSTMCell only capable of performing pop and hold operations.
   As we don't have to do any LSTM computations, (required only for push operations),
@@ -18,7 +18,7 @@ class BufferLSTMCell(nn.Module):
     :param hiddens: of type torch.autograd.Variable, (seq_len, batch_size, hidden_size)
     :param cells: of type torch.autograd.Variable, (seq_len, batch_size, hidden_size)
     """
-    super(BufferLSTMCell, self).__init__()
+    super(LSTMStateBufferCell, self).__init__()
     self.hidden_size = hidden_size
 
     self.initial_hidden = self.init_hidden(init_hidden_var)
