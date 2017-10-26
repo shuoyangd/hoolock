@@ -1,0 +1,4 @@
+pytorch
+torchtext
+dill
+six

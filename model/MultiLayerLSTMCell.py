@@ -2,6 +2,8 @@ import torch
 from torch import nn
 from torch.autograd import Variable
 
+import pdb
+
 class MultiLayerLSTMCell(nn.Module):
 
   def __init__(self, input_size, hidden_size, num_layers, bias=True):
@@ -11,18 +13,6 @@ class MultiLayerLSTMCell(nn.Module):
     for i in range(num_layers - 1):
       self.lstm.append(nn.LSTMCell(hidden_size, hidden_size))
     self.num_layers = num_layers
-    self.type = torch.FloatTensor
-
-
-  def cpu(self):
-    super(MultiLayerLSTMCell, self).cpu()
-    self.type = torch.FloatTensor
-
-
-  def gpu(self):
-    super(MultiLayerLSTMCell, self).gpu()
-    self.type = torch.cuda.FloatTensor
-
 
   def forward(self, input, prev):
     """
@@ -31,8 +21,9 @@ class MultiLayerLSTMCell(nn.Module):
     :param prev: tuple of (h0, c0), each has size (batch, hidden_size, num_layers)
     """
 
-    next_hidden = Variable(torch.zeros(prev[0].size()).type(self.type))
-    next_cell = Variable(torch.zeros(prev[1].size()).type(self.type))
+    dtype = torch.cuda.FloatTensor if next(self.lstm.parameters()).is_cuda else torch.FloatTensor
+    next_hidden = Variable(torch.zeros(prev[0].size()).type(dtype))
+    next_cell = Variable(torch.zeros(prev[1].size()).type(dtype))
 
     for i in range(self.num_layers):
       prev_hidden_i = prev[0][:, :, i]

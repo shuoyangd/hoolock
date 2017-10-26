@@ -112,15 +112,6 @@ class StackLSTMParser(nn.Module):
 
     self.softmax = nn.LogSoftmax() # LogSoftmax works on final dimension only for two dimension tensors. Be careful.
 
-  def cpu(self):
-    super(StackLSTMParser, self).cpu()
-    self.dtype = torch.FloatTensor
-    self.long_dtype = torch.LongTensor
-
-  def gpu(self):
-    super(StackLSTMParser, self).gpu()
-    self.dtype = torch.cuda.FloatTensor
-    self.long_dtype = torch.cuda.LongTensor
 
   def forward(self, tokens, pre_tokens=None, postags=None, actions=None):
     """
