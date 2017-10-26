@@ -15,10 +15,12 @@ class MultiLayerLSTMCell(nn.Module):
 
 
   def cpu(self):
+    super(MultiLayerLSTMCell, self).cpu()
     self.type = torch.FloatTensor
 
 
   def gpu(self):
+    super(MultiLayerLSTMCell, self).gpu()
     self.type = torch.cuda.FloatTensor
 
 
