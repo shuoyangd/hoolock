@@ -122,6 +122,9 @@ class StackLSTMCell(nn.Module):
     return self.hidden_stack[self.pos.data, torch.arange(0, len(self.pos)).type(dtype), :][:, :, -1] ,\
            self.cell_stack[self.pos.data, torch.arange(0, len(self.pos)).type(dtype), :][:, :, -1]
 
+  def size(self):
+    return torch.max(self.pos + 1).data[0]
+
 class BatchedToyStackModel(nn.Module):
 
   def __init__(self, emb_dim, hid_dim, stack_size, vocab_size):

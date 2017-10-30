@@ -1,4 +1,4 @@
-pytorch
+torch
 torchtext
 dill
 six

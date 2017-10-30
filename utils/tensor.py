@@ -1,5 +1,6 @@
 import math
 import torch
+import torch.autograd
 
 def truncate_or_pad(tensor, dim, length, pad_index=0):
 
@@ -121,3 +122,25 @@ def batchize(tensor, batch_size, pad_index):
   batched_size[0] = num_batched_instances
   padded_tensor = truncate_or_pad(tensor, 0, num_batched_instances * batch_size, pad_index)
   return padded_tensor.view(batched_size)
+
+def revert(tensor, dim):
+  if type(tensor) == torch.autograd.Variable:
+    dtype = type(tensor.data)
+  else:
+    dtype = type(tensor)
+  rev_idx = torch.arange(torch.arange(tensor.size(dim) - 1, -1, -1).type(dtype))
+  tensor = tensor.index_select(dim, rev_idx)
+  return tensor
+
+def revert_with_mask(tensor, mask, dim):
+  if type(tensor) == torch.autograd.Variable:
+    dtype = type(tensor.data)
+  else:
+    dtype = type(tensor)
+  rev_idx = torch.arange(torch.arange(tensor.size(dim) - 1, -1, -1).type(dtype))
+  rev_tensor = tensor.index_select(dim, rev_idx)
+  rev_mask = mask.index_select(dim, rev_idx)
+  cells = rev_tensor[rev_mask]
+  ret_tensor = tensor.clone()
+  ret_tensor[mask] = cells
+  return ret_tensor

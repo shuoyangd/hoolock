@@ -1,5 +1,7 @@
 from enum import Enum
 import logging
+import pdb
+import utils
 
 import torch
 from torch import nn
@@ -113,10 +115,11 @@ class StackLSTMParser(nn.Module):
     self.softmax = nn.LogSoftmax() # LogSoftmax works on final dimension only for two dimension tensors. Be careful.
 
 
-  def forward(self, tokens, pre_tokens=None, postags=None, actions=None):
+  def forward(self, tokens, tokens_mask, pre_tokens=None, postags=None, actions=None):
     """
 
     :param tokens: (seq_len, batch_size) tokens of the input sentence, preprocessed as vocabulary indexes
+    :param tokens_mask: (seq_len, batch_size) indication of whether this is a "real" token or a padding
     :param postags: (seq_len, batch_size) optional POS-tag of the tokens of the input sentence, preprocessed as indexes
     :param actions: (seq_len, batch_size) optional golden action sequence, preprocessed as indexes
     :return: output: (output_seq_len, batch_size, len(actions)), or when actions = None, (output_seq_len, batch_size, max_step_length)
@@ -132,10 +135,13 @@ class StackLSTMParser(nn.Module):
     if self.postag_emb is not None and postags is not None:
       pos_tag_emb = self.postag_emb(postags.t()) # (batch_size, seq_len, word_emb_dim)
       token_comp_input = torch.cat((token_comp_input, pos_tag_emb), dim=-1)
-    token_comp_output = self.compose_tokens(token_comp_input) # (batch_size, seq_len, input_dim)
-    token_comp_output = torch.transpose(token_comp_output, 0, 1) # (seq_len, batch_size, input_dim)
-    rev_idx = Variable(torch.arange(seq_len - 1, -1, -1).type(self.long_dtype))
-    token_comp_output_rev = token_comp_output.index_select(0, rev_idx)
+    token_comp_output = self.compose_tokens(token_comp_input) # (batch_size, seq_len, input_dim), pad at the end
+    token_comp_output = torch.transpose(token_comp_output, 0, 1) # (seq_len, batch_size, input_dim), pad at the end
+    # cannot just do plain revert because putting pad at the beginning is problematic
+    token_comp_output_rev = utils.tensor.revert_with_mask(token_comp_output,
+                                                          tokens_mask.unsqueeze(2).expand(1, 1, self.input_dim), 0)
+    # rev_idx = Variable(torch.arange(seq_len - 1, -1, -1).type(self.long_dtype))
+    # token_comp_output_rev = token_comp_output.index_select(0, rev_idx)
 
     # initialize stack
     self.stack.build_stack(batch_size, self.gpuid)
@@ -168,7 +174,9 @@ class StackLSTMParser(nn.Module):
     else:
       outputs = Variable(torch.zeros((actions.size()[0], batch_size, len(self.actions))).type(self.dtype))
       step_length = actions.size()[0]
-    for step_i in range(step_length):
+    # for step_i in range(step_length):
+    step_i = 0
+    while self.stack.size() > 0 and self.buffer.size() > 0 and step_i < step_length:
       # get action decisions
       summary = self.summarize_states(torch.cat((stack_state, buffer_state, action_state), dim=1)) # (batch_size, self.state_dim)
       action_dist = self.softmax(self.state_to_actions(summary)) # (batch_size, len(actions))
@@ -201,11 +209,15 @@ class StackLSTMParser(nn.Module):
       action_input = self.action_emb(action_i) # (batch_size, hid_dim)
       action_state, action_cell = self.history(action_input, (action_state, action_cell))
 
+      step_i += 1
+
     return outputs
 
   def set_action_mappings(self):
     for idx, astr in enumerate(self.actions):
       transition = astr.split('|')[0]
+
+      # If the action is unknown, leave the stack and buffer state as-is
       if self.transSys == TransitionSystems.AER:
         self.stack_action_mapping[idx], self.buffer_action_mapping[idx] = AER_map.get(transition, (0, 0))
       elif self.transSys == TransitionSystems.AH:

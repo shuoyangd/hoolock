@@ -24,6 +24,7 @@ class LSTMStateBufferCell(nn.Module):
     self.initial_hidden = self.init_hidden(init_hidden_var)
     self.initial_cell = self.init_cell(init_cell_var)
 
+  # FIXME: should take mask into consideration and decide how many "real" tokens are there in the buffer
   def build_stack(self, hiddens, cells, gpuid=[]):
     """
     :param hiddens: of type torch.autograd.Variable, (seq_len, batch_size, hidden_size)
@@ -91,3 +92,7 @@ class LSTMStateBufferCell(nn.Module):
     # print(self.hidden_stack.size())
     dtype = self.hidden_stack.long().data.type()
     return self.hidden_stack[self.pos.data, torch.arange(0, len(self.pos)).type(dtype), :]
+
+  # FIXME: this is not right
+  def size(self):
+    return torch.min(self.pos).data[0]
