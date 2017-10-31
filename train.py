@@ -95,7 +95,7 @@ def main(options):
   if use_pretrained_emb:
     batchized_train_data_pre, _ = utils.tensor.advanced_batchize_no_sort(train_data_pre, options.batch_size, pre_vocab.stoi["<pad>"], sort_index)
 
-  batchized_dev_data, _, sort_index = utils.tensor.advanced_batchize(dev_data, options.dev_batch_size, vocab.stoi["<pad>"])
+  batchized_dev_data, batchized_dev_data_mask, sort_index = utils.tensor.advanced_batchize(dev_data, options.dev_batch_size, vocab.stoi["<pad>"])
   batchized_dev_postag, _, _ = utils.tensor.advanced_batchize(dev_postag, options.dev_batch_size, postags.index("<pad>"))
   batchized_dev_action, batchized_dev_action_mask = utils.tensor.advanced_batchize_no_sort(dev_action, options.dev_batch_size, actions.index("<pad>"), sort_index)
   if use_pretrained_emb:
@@ -178,6 +178,7 @@ def main(options):
     for i, batch_i in enumerate(range(len(batchized_dev_data))):
       logging.debug("{0} dev batch calculated.".format(i))
       dev_data_batch = Variable(batchized_dev_data[batch_i], volatile=True) # (seq_len, dev_batch_size) with dynamic seq_len
+      dev_data_mask_batch = Variable(batchized_dev_data_mask[batch_i], volatile=True) # (seq_len, dev_batch_size) with dynamic seq_len
       dev_postag_batch = Variable(batchized_dev_postag[batch_i], volatile=True) # (seq_len, dev_batch_size) with dynamic seq_len
       dev_action_batch = Variable(batchized_dev_action[batch_i], volatile=True) # (seq_len, dev_batch_size) with dynamic seq_len
       dev_action_mask_batch = Variable(batchized_dev_action_mask[batch_i], volatile=True) # (seq_len, dev_batch_size) with dynamic seq_len
@@ -187,13 +188,14 @@ def main(options):
         dev_data_pre_batch = None
       if use_cuda:
         dev_data_batch = dev_data_batch.cuda()
+        dev_data_mask_batch = dev_data_mask_batch.cuda()
         dev_postag_batch = dev_postag_batch.cuda()
         dev_action_batch = dev_action_batch.cuda()
         dev_action_mask_batch = dev_action_mask_batch.cuda()
         if use_pretrained_emb:
           dev_data_pre_batch = dev_data_pre_batch.cuda()
 
-      output_batch = parser(dev_data_batch, dev_data_pre_batch, dev_postag_batch, dev_action_batch) # (max_seq_len, dev_batch_size, len(actions))
+      output_batch = parser(dev_data_batch, dev_data_mask_batch, dev_data_pre_batch, dev_postag_batch, dev_action_batch) # (max_seq_len, dev_batch_size, len(actions))
       output_batch = output_batch[0:len(dev_action_batch), :].view(-1, len(actions))
       dev_action_batch = dev_action_batch[0:len(output_batch), :].view(-1)
       dev_action_mask_batch = dev_action_mask_batch.view(-1)

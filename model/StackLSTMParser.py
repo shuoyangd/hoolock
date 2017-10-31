@@ -139,8 +139,11 @@ class StackLSTMParser(nn.Module):
     token_comp_output = self.compose_tokens(token_comp_input) # (batch_size, seq_len, input_dim), pad at the end
     token_comp_output = torch.transpose(token_comp_output, 0, 1) # (seq_len, batch_size, input_dim), pad at the end
     # cannot just do plain revert because putting pad at the beginning is problematic
-    token_comp_output_rev = utils.tensor.revert_with_mask(token_comp_output,
-                                                          tokens_mask.unsqueeze(2).expand(seq_len, batch_size, self.input_dim), 0)
+    token_comp_output_rev =\
+      utils.tensor.revert_with_mask(token_comp_output,
+                                    tokens_mask.unsqueeze(2).expand(seq_len, batch_size, self.input_dim), 0)
+    # (seq_len, batch_size, input_dim), pad at the end
+
     # rev_idx = Variable(torch.arange(seq_len - 1, -1, -1).type(self.long_dtype))
     # token_comp_output_rev = token_comp_output.index_select(0, rev_idx)
 
