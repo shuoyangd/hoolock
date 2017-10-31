@@ -89,7 +89,7 @@ def main(options):
     pre_vocab = None
 
   # (num_batched_instances, seq_len, batch_size)
-  batchized_train_data, _, sort_index = utils.tensor.advanced_batchize(train_data, options.batch_size, vocab.stoi["<pad>"])
+  batchized_train_data, batchized_train_data_mask, sort_index = utils.tensor.advanced_batchize(train_data, options.batch_size, vocab.stoi["<pad>"])
   batchized_train_postag, _, _ = utils.tensor.advanced_batchize(train_postag, options.batch_size, postags.index("<pad>"))
   batchized_train_action, batchized_train_action_mask = utils.tensor.advanced_batchize_no_sort(train_action, options.batch_size, actions.index("<pad>"), sort_index)
   if use_pretrained_emb:
@@ -121,6 +121,7 @@ def main(options):
     # for i, batch_i in enumerate(range(len(batchized_train_data))):
       logging.debug("{0} batch updates calculated, with batch {1}.".format(i, batch_i))
       train_data_batch = Variable(batchized_train_data[batch_i]) # (seq_len, batch_size) with dynamic seq_len
+      train_data_mask_batch = Variable(batchized_train_data_mask[batch_i]) # (seq_len, batch_size) with dynamic seq_len
       train_postag_batch = Variable(batchized_train_postag[batch_i]) # (seq_len, batch_size) with dynamic seq_len
       train_action_batch = Variable(batchized_train_action[batch_i]) # (seq_len, batch_size) with dynamic seq_len
       train_action_mask_batch = Variable(batchized_train_action_mask[batch_i]) # (seq_len, batch_size) with dynamic seq_len
@@ -130,13 +131,14 @@ def main(options):
         train_data_pre_batch = None
       if use_cuda:
         train_data_batch = train_data_batch.cuda()
+        train_data_mask_batch = train_data_mask_batch.cuda()
         train_postag_batch = train_postag_batch.cuda()
         train_action_batch = train_action_batch.cuda()
         train_action_mask_batch = train_action_mask_batch.cuda()
         if use_pretrained_emb:
           train_data_pre_batch = train_data_pre_batch.cuda()
 
-      output_batch = parser(train_data_batch, train_data_pre_batch, train_postag_batch, train_action_batch) # (seq_len, batch_size, len(actions)) with dynamic seq_len
+      output_batch = parser(train_data_batch, train_data_mask_batch, train_data_pre_batch, train_postag_batch, train_action_batch) # (seq_len, batch_size, len(actions)) with dynamic seq_len
       output_batch = output_batch.view(-1, len(actions)) # (seq_len * batch_size, len(actions))
       # train_action_batch_archiv = train_action_batch.clone()
       train_action_batch = train_action_batch.view(-1) # (seq_len * batch_size)

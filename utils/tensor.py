@@ -1,6 +1,6 @@
 import math
 import torch
-import torch.autograd
+from torch.autograd import Variable
 
 def truncate_or_pad(tensor, dim, length, pad_index=0):
 
@@ -128,7 +128,7 @@ def revert(tensor, dim):
     dtype = type(tensor.data)
   else:
     dtype = type(tensor)
-  rev_idx = torch.arange(torch.arange(tensor.size(dim) - 1, -1, -1).type(dtype))
+  rev_idx = Variable(torch.arange(tensor.size(dim) - 1, -1, -1).type(dtype).long())
   tensor = tensor.index_select(dim, rev_idx)
   return tensor
 
@@ -137,7 +137,7 @@ def revert_with_mask(tensor, mask, dim):
     dtype = type(tensor.data)
   else:
     dtype = type(tensor)
-  rev_idx = torch.arange(torch.arange(tensor.size(dim) - 1, -1, -1).type(dtype))
+  rev_idx = Variable(torch.arange(tensor.size(dim) - 1, -1, -1).type(dtype).long())
   rev_tensor = tensor.index_select(dim, rev_idx)
   rev_mask = mask.index_select(dim, rev_idx)
   cells = rev_tensor[rev_mask]

@@ -42,6 +42,7 @@ class StackLSTMParser(nn.Module):
     super(StackLSTMParser, self).__init__()
     self.stack_size = options.stack_size
     self.hid_dim = options.hid_dim
+    self.input_dim = options.input_dim
     self.max_step_length = options.max_step_length
     self.transSys = options.transSys
     self.exposure_eps = options.exposure_eps
@@ -139,7 +140,7 @@ class StackLSTMParser(nn.Module):
     token_comp_output = torch.transpose(token_comp_output, 0, 1) # (seq_len, batch_size, input_dim), pad at the end
     # cannot just do plain revert because putting pad at the beginning is problematic
     token_comp_output_rev = utils.tensor.revert_with_mask(token_comp_output,
-                                                          tokens_mask.unsqueeze(2).expand(1, 1, self.input_dim), 0)
+                                                          tokens_mask.unsqueeze(2).expand(seq_len, batch_size, self.input_dim), 0)
     # rev_idx = Variable(torch.arange(seq_len - 1, -1, -1).type(self.long_dtype))
     # token_comp_output_rev = token_comp_output.index_select(0, rev_idx)
 
@@ -155,8 +156,8 @@ class StackLSTMParser(nn.Module):
       bh, bc = self.pre_buffer(token_comp_output_rev[t_i], (bh, bc)) # (batch_size, self.hid_dim, self.num_lstm_layers)
       buffer_hiddens[t_i, :, :] = bh[:, :, -1]
       buffer_cells[t_i, :, :] = bc[:, :, -1]
-    self.buffer.build_stack(buffer_hiddens, buffer_cells, self.gpuid)
-    self.token_buffer.build_stack(token_comp_output, Variable(torch.zeros(token_comp_output.size())), self.gpuid) # don't need cell for this
+    self.buffer.build_stack(buffer_hiddens, buffer_cells, tokens_mask, self.gpuid)
+    self.token_buffer.build_stack(token_comp_output, Variable(torch.zeros(token_comp_output.size())), tokens_mask, self.gpuid) # don't need cell for this
 
     stack_state, _ = self.stack.head() # (batch_size, hid_dim)
     buffer_state = self.buffer.head() # (batch_size, hid_dim)
@@ -174,7 +175,6 @@ class StackLSTMParser(nn.Module):
     else:
       outputs = Variable(torch.zeros((actions.size()[0], batch_size, len(self.actions))).type(self.dtype))
       step_length = actions.size()[0]
-    # for step_i in range(step_length):
     step_i = 0
     while self.stack.size() > 0 and self.buffer.size() > 0 and step_i < step_length:
       # get action decisions
