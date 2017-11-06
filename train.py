@@ -28,11 +28,11 @@ opt_parser.add_argument("--data_file", required=True,
 opt_parser.add_argument("--model_file", required=True,
                         help="Path where model should be saved.")
 opt_parser.add_argument("--batch_size", default=80, type=int,
-                        help="Size of the training batch.")
+                        help="Size of the training batch. (default=80)")
 opt_parser.add_argument("--dev_batch_size", default=150, type=int,
-                        help="Size of the dev batch.")
+                        help="Size of the dev batch. (default=150)")
 opt_parser.add_argument("--gpuid", default=[], nargs='+', type=int,
-                        help="ID of gpu device to use. Empty implies cpu usage.")
+                        help="ID of gpu device to use. Empty implies cpu usage. (default=[])")
 
 # parser model definition
 opt_parser.add_argument("--transSys", default=model.StackLSTMParser.TransitionSystems.AER, type=int,

@@ -1,4 +1,5 @@
 import math
+import pdb
 import torch
 from torch.autograd import Variable
 
@@ -132,15 +133,36 @@ def revert(tensor, dim):
   tensor = tensor.index_select(dim, rev_idx)
   return tensor
 
-def revert_with_mask(tensor, mask, dim):
-  if type(tensor) == torch.autograd.Variable:
-    dtype = type(tensor.data)
-  else:
-    dtype = type(tensor)
-  rev_idx = Variable(torch.arange(tensor.size(dim) - 1, -1, -1).type(dtype).long())
-  rev_tensor = tensor.index_select(dim, rev_idx)
-  rev_mask = mask.index_select(dim, rev_idx)
-  cells = rev_tensor[rev_mask]
-  ret_tensor = tensor.clone()
-  ret_tensor[mask] = cells
-  return ret_tensor
+def masked_revert(tensor, mask, dim):
+  """
+
+  suppose you have mask that starts with 1s and has trailing 0s, e.g.:
+
+  data = [3, 9, 4, 0, 5, 2, 7, 7, 7]
+  mask = [1, 1, 1, 1, 1, 1, 0, 0, 0]
+
+  With 7 being the index for "<pad>" token. If you want to revert the data, most likely you want to revert the data in the region of 1s, but would like to keep the padding at the end.
+
+  We assume the following properties over the dimension of mask that you want to revert:
+
+  1). if the data is masked (0), it doesn't make a difference where it's masked -- they'll all point to some <pad> idx.
+      (in fact, we will return the content of the last masked idx for all the cells that's masked)
+  2). if index i is masked, all the indexes following (i.e. i+1 ...) will be masked.
+
+  So the output would be:
+
+  data = [2, 5, 0, 4, 9, 3, 7, 7, 7]
+
+  :param tensor: a pytorch tensor or variable
+  :param mask: a pytorch tensor or variable with the same size as tensor
+  :param dim: the dimension of revert you would like to do -- this should be the same dimension where you have masks
+  :return:
+  """
+  seq_len = mask.size(dim)
+  mask = mask.float()
+  n_unmasked = (torch.sum(mask, dim=dim) - 1).long()
+  sgn_mask = (1 - 2 * mask).long()
+  sgn_mask[0, :] = n_unmasked
+  masked_rev_idx = torch.cumsum(sgn_mask, dim=dim)
+  masked_rev_idx.masked_fill_((1 - mask).byte(), seq_len - 1)
+  return tensor.gather(dim, masked_rev_idx)

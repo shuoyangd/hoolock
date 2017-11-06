@@ -136,16 +136,9 @@ class StackLSTMParser(nn.Module):
     if self.postag_emb is not None and postags is not None:
       pos_tag_emb = self.postag_emb(postags.t()) # (batch_size, seq_len, word_emb_dim)
       token_comp_input = torch.cat((token_comp_input, pos_tag_emb), dim=-1)
-    token_comp_output = self.compose_tokens(token_comp_input) # (batch_size, seq_len, input_dim), pad at the end
-    token_comp_output = torch.transpose(token_comp_output, 0, 1) # (seq_len, batch_size, input_dim), pad at the end
-    # cannot just do plain revert because putting pad at the beginning is problematic
-    token_comp_output_rev =\
-      utils.tensor.revert_with_mask(token_comp_output,
-                                    tokens_mask.unsqueeze(2).expand(seq_len, batch_size, self.input_dim), 0)
-    # (seq_len, batch_size, input_dim), pad at the end
-
-    # rev_idx = Variable(torch.arange(seq_len - 1, -1, -1).type(self.long_dtype))
-    # token_comp_output_rev = token_comp_output.index_select(0, rev_idx)
+    token_comp_output = self.compose_tokens(token_comp_input) # (batch_size, seq_len, input_dim), pad at end
+    token_comp_output = torch.transpose(token_comp_output, 0, 1) # (seq_len, batch_size, input_dim), pad at end
+    token_comp_output_rev = utils.tensor.masked_revert(token_comp_output, tokens_mask.unsqueeze(2).expand(seq_len, batch_size, self.input_dim), 0) # (seq_len, batch_size, input_dim), pad at end
 
     # initialize stack
     self.stack.build_stack(batch_size, self.gpuid)
@@ -159,6 +152,7 @@ class StackLSTMParser(nn.Module):
       bh, bc = self.pre_buffer(token_comp_output_rev[t_i], (bh, bc)) # (batch_size, self.hid_dim, self.num_lstm_layers)
       buffer_hiddens[t_i, :, :] = bh[:, :, -1]
       buffer_cells[t_i, :, :] = bc[:, :, -1]
+
     self.buffer.build_stack(buffer_hiddens, buffer_cells, tokens_mask, self.gpuid)
     self.token_buffer.build_stack(token_comp_output, Variable(torch.zeros(token_comp_output.size())), tokens_mask, self.gpuid) # don't need cell for this
 
