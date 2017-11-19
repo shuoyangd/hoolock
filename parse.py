@@ -8,7 +8,6 @@ import utils
 import argparse
 import dill
 import logging
-import math
 import os
 import pdb
 
@@ -59,10 +58,7 @@ def main(options):
   test_data, test_postag = conll_indice_mapping_without_padding(options.input_file, vocab, postag2idx)
   if use_pretrained_emb:
     test_data_pre, _ = conll_indice_mapping_without_padding(options.input_file, pre_vocab, postag2idx)
-  test_data_lengths = torch.FloatTensor([ len(test_data[i]) for i in range(len(test_data)) ]).long()
-  test_data_lengths = utils.tensor.truncate_or_pad(test_data_lengths, 0,
-                               math.ceil(len(test_data_lengths) / options.batch_size) * options.batch_size)
-  batchized_test_data, _ = utils.tensor.advanced_batchize_no_sort(test_data, options.batch_size, vocab.stoi["<pad>"])
+  batchized_test_data, batchized_test_data_mask = utils.tensor.advanced_batchize_no_sort(test_data, options.batch_size, vocab.stoi["<pad>"])
   batchized_test_postag, _ = utils.tensor.advanced_batchize_no_sort(test_postag, options.batch_size, postags.index("<pad>"))
   if use_pretrained_emb:
     batchized_test_data_pre, _ = utils.tensor.advanced_batchize_no_sort(test_data_pre, options.batch_size, pre_vocab.stoi["<pad>"])
@@ -82,20 +78,20 @@ def main(options):
   for batch_i in range(len(batchized_test_data)):
     logging.debug("{0} batch updates calculated.".format(batch_i))
     test_data_batch = Variable(batchized_test_data[batch_i], volatile=True)
+    test_data_mask_batch = Variable(batchized_test_data_mask[batch_i], volatile=True)
     test_postag_batch = Variable(batchized_test_postag[batch_i], volatile=True)
-    test_data_lengths_batch = Variable(test_data_lengths[batch_i * options.batch_size: (batch_i + 1) * options.batch_size], volatile=True)
     if use_pretrained_emb:
       test_data_pre_batch = Variable(batchized_test_data_pre[batch_i], volatile=True)
     else:
       test_data_pre_batch = None
     if use_cuda:
       test_data_batch.cuda()
+      test_data_mask_batch.cuda()
       test_postag_batch.cuda()
-      test_data_lengths_batch.cuda()
       if use_pretrained_emb:
         test_data_pre_batch.cuda()
 
-    output_batch = parser(test_data_batch, pre_tokens=test_data_pre_batch, postags=test_postag_batch, tokens_lengths=test_data_lengths_batch) # (max_seq_len, batch_size, len(actions))
+    output_batch = parser(test_data_batch, test_data_mask_batch,  pre_tokens=test_data_pre_batch, postags=test_postag_batch) # (max_seq_len, batch_size, len(actions))
     _, output_actions = output_batch.max(dim=2) # (max_seq_len, batch_size)
     writer.writesent(output_actions)
 
