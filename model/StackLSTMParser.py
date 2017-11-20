@@ -158,8 +158,7 @@ class StackLSTMParser(nn.Module):
 
     stack_state, _ = self.stack.head() # (batch_size, hid_dim)
     buffer_state = self.buffer.head() # (batch_size, hid_dim)
-    # stack_input = self.token_buffer.head() # (batch_size, input_size)
-    stack_input = self.buffer.head() # (batch_size, input_size)  # XXX: test!
+    stack_input = self.token_buffer.head() # (batch_size, input_size)
     action_state = self.h0.unsqueeze(0).expand(batch_size, self.hid_dim) # (batch_size, hid_dim)
     action_cell = self.c0.unsqueeze(0).expand(batch_size, self.hid_dim) # (batch_size, hid_dim)
 
@@ -203,8 +202,7 @@ class StackLSTMParser(nn.Module):
       # update stack, buffer and action state
       stack_state, _ = self.stack(stack_input, stack_op)
       buffer_state, _ = self.buffer(buffer_op)
-      # stack_input, _ = self.token_buffer(buffer_op)
-      stack_input = self.buffer.head() # (batch_size, input_size)  # XXX: test!
+      stack_input, _ = self.token_buffer(buffer_op)
       action_input = self.action_emb(action_i) # (batch_size, hid_dim)
       action_state, action_cell = self.history(action_input, (action_state, action_cell))
 
