@@ -224,7 +224,8 @@ def main(options):
 
   logging.info("checking vocabulary integrity...")
   check_vocab_integrity(vocab)
-  check_vocab_integrity(pre_vocab)
+  if pre_vocab:
+    check_vocab_integrity(pre_vocab)
 
   # second pass: map data
   logging.info("input indice mapping w/ training...")

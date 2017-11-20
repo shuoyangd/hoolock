@@ -44,7 +44,7 @@ class StackLSTMParser(nn.Module):
     self.hid_dim = options.hid_dim
     self.input_dim = options.input_dim
     self.max_step_length = options.max_step_length
-    self.transSys = options.transSys
+    self.transSys = TransitionSystems(options.transSys)
     self.exposure_eps = options.exposure_eps
     self.num_lstm_layers = options.num_lstm_layers
 

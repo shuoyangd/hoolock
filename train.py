@@ -35,8 +35,8 @@ opt_parser.add_argument("--gpuid", default=[], nargs='+', type=int,
                         help="ID of gpu device to use. Empty implies cpu usage. (default=[])")
 
 # parser model definition
-opt_parser.add_argument("--transSys", default=model.StackLSTMParser.TransitionSystems.AER, type=int,
-                        help="Choice of transition system: 0 for ASd, 1 for AER, 2 for AH. (default=1)")
+opt_parser.add_argument("--transSys", default=1, type=int,
+                        help="Choice of transition system: 0 for ASd, 1 for AER, 2 for AES, 3 for AH. (default=1)")
 opt_parser.add_argument("--word_emb_dim", default=32, type=int,
                         help="Size of updated word embedding. (default=32)")
 opt_parser.add_argument("--postag_emb_dim", default=12, type=int,
