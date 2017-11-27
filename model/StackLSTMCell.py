@@ -74,7 +74,8 @@ class StackLSTMCell(nn.Module):
     prev_hidden = self.hidden_stack[((self.pos - 1) % (self.stack_size + 1)).data, range(len(self.pos)), :, :].clone()
     prev_cell = self.cell_stack[((self.pos - 1) % (self.stack_size + 1)).data, range(len(self.pos)), :, :].clone()
 
-    next_hidden, next_cell = self.lstm(input, (prev_hidden, prev_cell))
+    # next_hidden, next_cell = self.lstm(input, (prev_hidden, prev_cell))
+    next_hidden, next_cell = self.lstm(input, (cur_hidden, cur_cell))
 
     self.hidden_stack[(self.pos + 1).data, range(len(self.pos)), :, :] = next_hidden
     self.cell_stack[(self.pos + 1).data, range(len(self.pos)), :, :] = next_cell

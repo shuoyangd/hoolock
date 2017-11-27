@@ -1,6 +1,8 @@
 from model.StackLSTMParser import TransitionSystems
 import logging
 
+import pdb
+
 logging.basicConfig(format='%(asctime)s %(message)s',
                     datefmt='%m/%d/%Y %I:%M:%S %p')
 
@@ -132,6 +134,31 @@ class Oracle2CoNLLWriter:
     self.file = file
     self.transSys = transSys
 
+  def terminated(self, j, t, stack, buf):
+    if self.transSys == TransitionSystems.ASd:
+      raise NotImplementedError
+    elif self.transSys == TransitionSystems.AES or \
+        self.transSys == TransitionSystems.AER:
+      if not j:
+        return 1
+      elif len(stack) < 2 and t["OP"] == "Left-Arc":
+        return 2
+      else:
+        return 0
+    elif self.transSys == TransitionSystems.ASw:
+      raise NotImplementedError
+    elif self.transSys == TransitionSystems.AH:
+      if (not j) and (t["OP"] == "Shift" or t["OP"] == "Left-Arc"):
+        return 1
+      elif len(stack) < 2 and t["OP"] == "Right-Arc":
+        return 2
+      elif len(stack) < 1 and t["OP"] == "Left-Arc":
+        return 2
+      else:
+        return 0
+    else:
+      raise NotImplementedError
+
   def writesent(self, lines, ref_lines=None):
     """
     This function is (almost) blindly copied from Peng Qi's code, with some modifications:
@@ -184,11 +211,8 @@ class Oracle2CoNLLWriter:
     ret = 0
     for t in lines:
       j = None if len(buf) == 0 else buf[0]
-      if not j:
-        ret = 1
-        break
-      if not stack:
-        ret = 2
+      ret = self.terminated(j, t, stack, buf)
+      if ret != 0:
         break
       if self.transSys == TransitionSystems.ASw:
         if t["OP"] == 'Left-Arc':
@@ -251,19 +275,19 @@ class Oracle2CoNLLWriter:
           buf = buf[1:]
       elif self.transSys == TransitionSystems.AH:
         if t["OP"] == 'Left-Arc':
-          relation = t[1]
+          relation = t["DEPREL"]
           parent[stack[0]] = j
           # output[stack[0]] = "%d\t%s" % (j, relation)
           output[stack[0]] = output_str(stack[0], j, relation, ref_lines)
           stack = stack[1:]
         elif t["OP"] == 'Right-Arc':
-          relation = t[1]
+          relation = t["DEPREL"]
           parent[stack[0]] = stack[1]
           # output[stack[0]] = "%d\t%s" % (stack[1], relation)
           output[stack[0]] = output_str(stack[0], stack[1], relation, ref_lines)
           stack = stack[1:]
         elif t["OP"] == 'Shift':
-          pos[j] = t[1]
+          pos[j] = t["UPOSTAG"]
           stack = [j] + stack
           buf = buf[1:]
 
