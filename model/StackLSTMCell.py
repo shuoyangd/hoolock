@@ -39,16 +39,16 @@ class StackLSTMCell(nn.Module):
     # note that they are different from the memory bank that's returned
     # by the forward function!
     if len(gpuid) >= 1:
-      dtype = torch.cuda.FloatTensor
-      long_dtype = torch.cuda.LongTensor
+      self.dtype = torch.cuda.FloatTensor
+      self.long_dtype = torch.cuda.LongTensor
     else:
-      dtype = torch.FloatTensor
-      long_dtype = torch.LongTensor
+      self.dtype = torch.FloatTensor
+      self.long_dtype = torch.LongTensor
 
-    self.pos = Variable(torch.LongTensor([0] * batch_size).type(long_dtype))
+    self.pos = Variable(torch.LongTensor([0] * batch_size).type(self.long_dtype))
 
-    self.hidden_stack = Variable(torch.zeros(self.stack_size + 1, batch_size, self.hidden_size, self.num_layers).type(dtype))
-    self.cell_stack = Variable(torch.zeros(self.stack_size + 1, batch_size, self.hidden_size, self.num_layers).type(dtype))
+    self.hidden_stack = Variable(torch.zeros(self.stack_size + 1, batch_size, self.hidden_size, self.num_layers).type(self.dtype))
+    self.cell_stack = Variable(torch.zeros(self.stack_size + 1, batch_size, self.hidden_size, self.num_layers).type(self.dtype))
 
     # seq_len = preload_hidden.size()[0]
     # if preload_hidden is not None:
@@ -70,9 +70,9 @@ class StackLSTMCell(nn.Module):
     :return: (hidden, cell): both are (batch_size, hidden_dim)
     """
     batch_size = input.size(0)
-    push_indexes = torch.arange(0, batch_size)[(op == 1).long().data].long()
-    pop_indexes = torch.arange(0, batch_size)[(op == -1).long().data].long()
-    hold_indexes = torch.arange(0, batch_size)[(op == 0).long().data].long()
+    push_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == 1).long().data]
+    pop_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == -1).long().data]
+    hold_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == 0).long().data]
 
     if len(push_indexes) != 0:
       input = input[push_indexes, :]
@@ -93,8 +93,8 @@ class StackLSTMCell(nn.Module):
       cur_cell = self.cell_stack[self.pos[hold_indexes].data, hold_indexes, :, :].clone()  # (hold_indexes, hidden_size, num_layers)
 
     # we only care about the hidden & cell states of the last layer for return values
-    hidden_ret = Variable(torch.zeros(batch_size, self.hidden_size))
-    cell_ret = Variable(torch.zeros(batch_size, self.hidden_size))
+    hidden_ret = Variable(torch.zeros(batch_size, self.hidden_size).type(self.dtype))
+    cell_ret = Variable(torch.zeros(batch_size, self.hidden_size).type(self.dtype))
     if len(hold_indexes) != 0:
       hidden_ret[hold_indexes] = cur_hidden[:, :, -1]
       cell_ret[hold_indexes] = cur_cell[:, :, -1]
@@ -124,9 +124,8 @@ class StackLSTMCell(nn.Module):
       return init_var
 
   def head(self):
-    dtype = self.hidden_stack.long().data.type()
-    return self.hidden_stack[self.pos.data, torch.arange(0, len(self.pos)).type(dtype), :][:, :, -1] ,\
-           self.cell_stack[self.pos.data, torch.arange(0, len(self.pos)).type(dtype), :][:, :, -1]
+    return self.hidden_stack[self.pos.data, torch.arange(0, len(self.pos)).type(self.long_dtype), :][:, :, -1] ,\
+           self.cell_stack[self.pos.data, torch.arange(0, len(self.pos)).type(self.long_dtype), :][:, :, -1]
 
   def size(self):
     return torch.max(self.pos + 1).data[0]
