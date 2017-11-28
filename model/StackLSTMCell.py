@@ -39,16 +39,16 @@ class StackLSTMCell(nn.Module):
     # note that they are different from the memory bank that's returned
     # by the forward function!
     if len(gpuid) >= 1:
-      self.dtype = torch.cuda.FloatTensor
-      self.long_dtype = torch.cuda.LongTensor
+      dtype = torch.cuda.FloatTensor
+      long_dtype = torch.cuda.LongTensor
     else:
-      self.dtype = torch.FloatTensor
-      self.long_dtype = torch.LongTensor
+      dtype = torch.FloatTensor
+      long_dtype = torch.LongTensor
 
-    self.pos = Variable(torch.LongTensor([0] * batch_size).type(self.long_dtype))
+    self.pos = Variable(torch.LongTensor([0] * batch_size).type(long_dtype))
 
-    self.hidden_stack = Variable(torch.zeros(self.stack_size + 1, batch_size, self.hidden_size, self.num_layers).type(self.dtype))
-    self.cell_stack = Variable(torch.zeros(self.stack_size + 1, batch_size, self.hidden_size, self.num_layers).type(self.dtype))
+    self.hidden_stack = Variable(torch.zeros(self.stack_size + 1, batch_size, self.hidden_size, self.num_layers).type(dtype))
+    self.cell_stack = Variable(torch.zeros(self.stack_size + 1, batch_size, self.hidden_size, self.num_layers).type(dtype))
 
     # seq_len = preload_hidden.size()[0]
     # if preload_hidden is not None:
@@ -70,9 +70,9 @@ class StackLSTMCell(nn.Module):
     :return: (hidden, cell): both are (batch_size, hidden_dim)
     """
     batch_size = input.size(0)
-    push_indexes = torch.arange(0, batch_size).type(self.dtype)[(op == 1).data].long()
-    pop_indexes = torch.arange(0, batch_size).type(self.dtype)[(op == -1).data].long()
-    hold_indexes = torch.arange(0, batch_size).type(self.type)[(op == 0).data].long()
+    push_indexes = torch.arange(0, batch_size)[(op == 1).long().data].long()
+    pop_indexes = torch.arange(0, batch_size)[(op == -1).long().data].long()
+    hold_indexes = torch.arange(0, batch_size)[(op == 0).long().data].long()
 
     if len(push_indexes) != 0:
       input = input[push_indexes, :]
@@ -124,8 +124,9 @@ class StackLSTMCell(nn.Module):
       return init_var
 
   def head(self):
-    return self.hidden_stack[self.pos.data, torch.arange(0, len(self.pos)).type(self.dtype), :][:, :, -1] ,\
-           self.cell_stack[self.pos.data, torch.arange(0, len(self.pos)).type(self.dtype), :][:, :, -1]
+    dtype = self.hidden_stack.long().data.type()
+    return self.hidden_stack[self.pos.data, torch.arange(0, len(self.pos)).type(dtype), :][:, :, -1] ,\
+           self.cell_stack[self.pos.data, torch.arange(0, len(self.pos)).type(dtype), :][:, :, -1]
 
   def size(self):
     return torch.max(self.pos + 1).data[0]
