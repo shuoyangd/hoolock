@@ -69,42 +69,47 @@ class StackLSTMCell(nn.Module):
     :param op: (batch_size,), stack operations, in batch (-1 means pop, 1 means push, 0 means hold).
     :return: (hidden, cell): both are (batch_size, hidden_dim)
     """
-    cur_hidden = self.hidden_stack[self.pos.data, range(len(self.pos)), :, :].clone()  # (batch_size, hidden_size, num_layers)
-    cur_cell = self.cell_stack[self.pos.data, range(len(self.pos)), :, :].clone()  # (batch_size, hidden_size, num_layers)
-    prev_hidden = self.hidden_stack[((self.pos - 1) % (self.stack_size + 1)).data, range(len(self.pos)), :, :].clone()
-    prev_cell = self.cell_stack[((self.pos - 1) % (self.stack_size + 1)).data, range(len(self.pos)), :, :].clone()
+    batch_size = input.size(0)
+    push_indexes = torch.arange(0, batch_size)[(op == 1).data].long()
+    pop_indexes = torch.arange(0, batch_size)[(op == -1).data].long()
+    hold_indexes = torch.arange(0, batch_size)[(op == 0).data].long()
 
-    # next_hidden, next_cell = self.lstm(input, (prev_hidden, prev_cell))
-    next_hidden, next_cell = self.lstm(input, (cur_hidden, cur_cell))
+    if len(push_indexes) != 0:
+      input = input[push_indexes, :]
+      cur_hidden = self.hidden_stack[self.pos[push_indexes].data, push_indexes, :, :].clone()  # (push_indexes, hidden_size, num_layers)
+      cur_cell = self.cell_stack[self.pos[push_indexes].data, push_indexes, :, :].clone()  # (push_indexes, hidden_size, num_layers)
+      # next_hidden, next_cell = self.lstm(input, (prev_hidden, prev_cell))
+      next_hidden, next_cell = self.lstm(input, (cur_hidden, cur_cell))
+    if len(pop_indexes) != 0:
+      prev_hidden = self.hidden_stack[((self.pos[pop_indexes] - 1) % (self.stack_size + 1)).data, pop_indexes, :, :].clone()
+      prev_cell = self.cell_stack[((self.pos[pop_indexes] - 1) % (self.stack_size + 1)).data, pop_indexes, :, :].clone()
 
-    self.hidden_stack[(self.pos + 1).data, range(len(self.pos)), :, :] = next_hidden
-    self.cell_stack[(self.pos + 1).data, range(len(self.pos)), :, :] = next_cell
+    if len(push_indexes) != 0:
+      self.hidden_stack[(self.pos[push_indexes] + 1).data, push_indexes, :, :] = next_hidden
+      self.cell_stack[(self.pos[push_indexes] + 1).data, push_indexes, :, :] = next_cell
+
+    if len(hold_indexes) != 0:
+      cur_hidden = self.hidden_stack[self.pos[hold_indexes].data, hold_indexes, :, :].clone()  # (hold_indexes, hidden_size, num_layers)
+      cur_cell = self.cell_stack[self.pos[hold_indexes].data, hold_indexes, :, :].clone()  # (hold_indexes, hidden_size, num_layers)
 
     # we only care about the hidden & cell states of the last layer for return values
-    cur_hidden_ret = cur_hidden[:, :, -1]
-    cur_cell_ret = cur_cell[:, :, -1]
-    next_hidden_ret = next_hidden[:, :, -1]
-    next_cell_ret = next_cell[:, :, -1]
-    prev_hidden_ret = prev_hidden[:, :, -1]
-    prev_cell_ret = prev_cell[:, :, -1]
-
-    # all return decision are here
-    # push/pop
-    hidden_ret = torch.mm(next_hidden_ret.t(), torch.diag(1 + op).float()) + \
-          torch.mm(prev_hidden_ret.t(), torch.diag(1 + (-1) * op).float())
-    cell_ret = torch.mm(next_cell_ret.t(), torch.diag(1 + op).float()) + \
-          torch.mm(prev_cell_ret.t(), torch.diag(1 + (-1) * op).float())
-    # move/hold
-    hidden_ret = torch.mm(hidden_ret, torch.diag(torch.abs(op)).float()) + \
-          torch.mm(cur_hidden_ret.t(), torch.diag(1 + (-1) * torch.abs(op)).float())
-    cell_ret = torch.mm(cell_ret, torch.diag(torch.abs(op)).float()) + \
-          torch.mm(cur_cell_ret.t(), torch.diag(1 + (-1) * torch.abs(op)).float())
+    hidden_ret = Variable(torch.zeros(batch_size, self.hidden_size))
+    cell_ret = Variable(torch.zeros(batch_size, self.hidden_size))
+    if len(hold_indexes) != 0:
+      hidden_ret[hold_indexes] = cur_hidden[:, :, -1]
+      cell_ret[hold_indexes] = cur_cell[:, :, -1]
+    if len(push_indexes) != 0:
+      hidden_ret[push_indexes] = next_hidden[:, :, -1]
+      cell_ret[push_indexes] = next_cell[:, :, -1]
+    if len(pop_indexes) != 0:
+      hidden_ret[pop_indexes] = prev_hidden[:, :, -1]
+      cell_ret[pop_indexes] = prev_cell[:, :, -1]
 
     # position overflow/underflow protection should not be done here,
     # they may not be desirable depending on the application
     self.pos += op
 
-    return hidden_ret.t(), cell_ret.t()
+    return hidden_ret, cell_ret
 
   def init_hidden(self, init_var=None):
     if init_var is None:
