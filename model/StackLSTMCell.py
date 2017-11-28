@@ -70,9 +70,9 @@ class StackLSTMCell(nn.Module):
     :return: (hidden, cell): both are (batch_size, hidden_dim)
     """
     batch_size = input.size(0)
-    push_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == 1).long().data]
-    pop_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == -1).long().data]
-    hold_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == 0).long().data]
+    push_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == 1).data]
+    pop_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == -1).data]
+    hold_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == 0).data]
 
     if len(push_indexes) != 0:
       input = input[push_indexes, :]

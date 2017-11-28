@@ -52,7 +52,7 @@ opt_parser.add_argument("--state_dim", default=20, type=int,
 opt_parser.add_argument("--dropout_rate", default=0.0, type=float,
                         help="Dropout rate of the LSTM and stack LSTM components. (default=0.0)")
 opt_parser.add_argument("--stack_size", default=100, type=int,
-                        help="Stack size reserved for the stack LSTM components. (default=25)")
+                        help="Stack size reserved for the stack LSTM components. (default=100)")
 opt_parser.add_argument("--max_step_length", default=150, type=int,
                         help="Maximum step length allowed for decoding. (default=150)")
 opt_parser.add_argument("--exposure_eps", default=1.0, type=float,
