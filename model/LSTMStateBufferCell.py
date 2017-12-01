@@ -52,6 +52,7 @@ class LSTMStateBufferCell(nn.Module):
     self.hidden_stack[1:self.seq_len+1, :, :] = hiddens
     self.cell_stack[1:self.seq_len+1, :, :] = cells
 
+    # for padded sequences, the pos would be 0. That's why we need a padding state in the buffer.
     self.pos = torch.sum(hidden_masks, dim=0).long() # note there is a initial state padding
 
   def forward(self, op):

@@ -92,6 +92,7 @@ class StackLSTMParser(nn.Module):
         nn.Linear(token_comp_in_features, options.input_dim),
         nn.ReLU()
     )
+    self.root_input = nn.Parameter(torch.rand(options.input_dim))
 
     # recurrent components
     # the only reason to have unified h0 and c0 is because pre_buffer and buffer should have the same initial states
@@ -155,6 +156,7 @@ class StackLSTMParser(nn.Module):
 
     self.buffer.build_stack(buffer_hiddens, buffer_cells, tokens_mask, self.gpuid)
     self.token_buffer.build_stack(token_comp_output_rev, Variable(torch.zeros(token_comp_output_rev.size())), tokens_mask, self.gpuid) # don't need cell for this
+    self.stack(self.root_input.unsqueeze(0).expand(batch_size, self.input_dim), Variable(torch.ones(batch_size).long()))
 
     stack_state, _ = self.stack.head() # (batch_size, hid_dim)
     buffer_state = self.buffer.head() # (batch_size, hid_dim)
@@ -173,7 +175,7 @@ class StackLSTMParser(nn.Module):
       outputs = Variable(torch.zeros((actions.size()[0], batch_size, len(self.actions))).type(self.dtype))
       step_length = actions.size()[0]
     step_i = 0
-    while self.stack.size() > 0 and self.buffer.size() > 0 and step_i < step_length:
+    while self.stack.size() > 1 and self.buffer.size() > 0 and step_i < step_length:
       # get action decisions
       summary = self.summarize_states(torch.cat((stack_state, buffer_state, action_state), dim=1)) # (batch_size, self.state_dim)
       action_dist = self.softmax(self.state_to_actions(summary)) # (batch_size, len(actions))
