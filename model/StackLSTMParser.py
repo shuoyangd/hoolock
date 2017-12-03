@@ -156,7 +156,7 @@ class StackLSTMParser(nn.Module):
 
     self.buffer.build_stack(buffer_hiddens, buffer_cells, tokens_mask, self.gpuid)
     self.token_buffer.build_stack(token_comp_output_rev, Variable(torch.zeros(token_comp_output_rev.size())), tokens_mask, self.gpuid) # don't need cell for this
-    self.stack(self.root_input.unsqueeze(0).expand(batch_size, self.input_dim), Variable(torch.ones(batch_size).long()))
+    self.stack(self.root_input.unsqueeze(0).expand(batch_size, self.input_dim), Variable(torch.ones(batch_size).type(self.long_dtype)))
 
     stack_state, _ = self.stack.head() # (batch_size, hid_dim)
     buffer_state = self.buffer.head() # (batch_size, hid_dim)
