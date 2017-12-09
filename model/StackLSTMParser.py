@@ -184,7 +184,7 @@ class StackLSTMParser(nn.Module):
       outputs[step_i, :, :] = action_dist.clone()
 
       # get rid of forbidden actions (only for decoding)
-      if actions is None or self.exposure_eps > 0:
+      if actions is None or self.exposure_eps < 1.0:
         forbidden_actions = self.get_valid_actions(batch_size) ^ 1
         # print("stack size = {0}".format(self.stack.size()))
         # print("buffer size = {0}".format(self.buffer.size()))
