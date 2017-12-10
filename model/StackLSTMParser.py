@@ -189,6 +189,11 @@ class StackLSTMParser(nn.Module):
         # print("stack size = {0}".format(self.stack.size()))
         # print("buffer size = {0}".format(self.buffer.size()))
         # print("forbidden actions = {0}".format(torch.sum(forbidden_actions, dim=1).tolist()))
+        num_forbidden_actions = torch.sum(forbidden_actions, dim=1)
+        # if all actions except <pad> and <unk> are forbidden for all sentences in the batch,
+        # there is no sense continue decoding.
+        if (num_forbidden_actions == (len(self.actions) - 2)).all():
+          break
         action_dist.masked_fill_(forbidden_actions, -999)
 
       _, action_i = torch.max(action_dist, dim=1) # (batch_size,)
@@ -240,18 +245,18 @@ class StackLSTMParser(nn.Module):
       ba = self.buffer_action_mapping[idx].repeat(batch_size)
       stack_forbid = ((sa == -1).data & (self.stack.pos <= 1).data)
       buffer_forbid = ((ba == -1).data & (self.buffer.pos == 0).data)
-      action_mask[:, idx] = (action_mask[:, idx] & (stack_forbid | buffer_forbid) ^ 1)
+      action_mask[:, idx] = (action_mask[:, idx] & ((stack_forbid | buffer_forbid) ^ 1))
 
       # transition-system specific operation safety
       if self.transSys == TransitionSystems.AER:
         la_forbid = (((self.buffer.pos == 0).data | (self.stack.pos <= 1).data) & action_str.startswith("Left-Arc"))
         ra_forbid = (((self.stack.pos == 0).data | (self.stack.pos == 0).data) & action_str.startswith("Right-Arc"))
-        action_mask[:, idx] = (action_mask[:, idx] & (la_forbid | ra_forbid) ^ 1)
+        action_mask[:, idx] = (action_mask[:, idx] & ((la_forbid | ra_forbid) ^ 1))
 
       if self.transSys == TransitionSystems.AH:
         la_forbid = (((self.buffer.pos == 0).data | (self.stack.pos <= 1).data) & action_str.startswith("Left-Arc"))
         ra_forbid = (self.stack.pos <= 1).data & action_str.startswith("Right-Arc")
-        action_mask[:, idx] = (action_mask[:, idx] & (la_forbid | ra_forbid) ^ 1)
+        action_mask[:, idx] = (action_mask[:, idx] & ((la_forbid | ra_forbid) ^ 1))
 
     return action_mask
 

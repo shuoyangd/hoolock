@@ -64,6 +64,8 @@ def main(options):
     batchized_test_data_pre, _ = utils.tensor.advanced_batchize_no_sort(test_data_pre, options.batch_size, pre_vocab.stoi["<pad>"])
 
   parser = torch.load(open(options.model_file, 'rb'), map_location=lambda storage, loc: storage)
+  parser.max_step_length = options.max_step_length
+  parser.stack_size = options.stack_size
   parser.gpuid = options.gpuid
   if use_cuda:
     parser.cuda()
