@@ -82,7 +82,7 @@ def main(options):
   train_data, train_postag, train_action = torch.load(open(options.data_file + ".train", 'rb'), pickle_module=dill)
   dev_data, dev_postag, dev_action = torch.load(open(options.data_file + ".dev", 'rb'), pickle_module=dill)
   vocab, postags, actions = torch.load(open(options.data_file + ".dict", 'rb'), pickle_module=dill)
-  singletons = set([w for w in vocab.itos if vocab.freqs[w] == 1])
+  singletons = set([vocab.stoi[w] for w in vocab.itos if vocab.freqs[w] == 1])
   use_pretrained_emb = os.path.isfile(options.data_file + ".pre")
   if use_pretrained_emb:
     train_data_pre, dev_data_pre, pre_vocab = torch.load(open(options.data_file + ".pre", 'rb'), pickle_module=dill)
@@ -127,7 +127,7 @@ def main(options):
     """
 
     shape = batch.size()
-    lin_batch = batch.view(-1)
+    lin_batch = batch.clone().view(-1)  # shouldn't replace in-place
 
     for idx, w in enumerate(lin_batch):
       if int(w) in singletons and torch.rand(1)[0] < 0.5:
@@ -142,8 +142,8 @@ def main(options):
     for i, batch_i in enumerate(utils.rand.srange(len(batchized_train_data))):
     # for i, batch_i in enumerate(range(len(batchized_train_data))):
       logging.debug("{0} batch updates calculated, with batch {1}.".format(i, batch_i))
-      train_data_batch = Variable(batchized_train_data[batch_i]) # (seq_len, batch_size) with dynamic seq_len
-      train_data_batch = replace_singletons(train_data_batch, singletons, vocab.stoi["<unk>"])
+      train_data_batch = replace_singletons(batchized_train_data[batch_i], singletons, vocab.stoi["<unk>"])
+      train_data_batch = Variable(train_data_batch) # (seq_len, batch_size) with dynamic seq_len
       train_data_mask_batch = Variable(batchized_train_data_mask[batch_i]) # (seq_len, batch_size) with dynamic seq_len
       train_postag_batch = Variable(batchized_train_postag[batch_i]) # (seq_len, batch_size) with dynamic seq_len
       train_action_batch = Variable(batchized_train_action[batch_i]) # (seq_len, batch_size) with dynamic seq_len
@@ -197,6 +197,14 @@ def main(options):
       logging.debug("post pred accuracy: {0}".format(hit / len(post_output_batch)))
       """
 
+      # minimize pytorch memory usage
+      del train_data_batch
+      del train_data_mask_batch
+      del train_postag_batch
+      del train_action_batch
+      if train_data_pre_batch:
+        del train_data_pre_batch
+
     dev_loss = 0.0
     for i, batch_i in enumerate(range(len(batchized_dev_data))):
       logging.debug("{0} dev batch calculated.".format(i))
@@ -226,6 +234,14 @@ def main(options):
       dev_action_batch = dev_action_batch.masked_select(dev_action_mask_batch) # (seq_len * batch_size)
       batch_dev_loss = loss(output_batch, dev_action_batch)
       dev_loss += batch_dev_loss.data[0]
+
+      # minimize pytorch memory usage
+      del dev_data_batch
+      del dev_data_mask_batch
+      del dev_postag_batch
+      del dev_action_batch
+      if dev_data_pre_batch:
+        del dev_data_pre_batch
 
     logging.info("End of {0} epoch: ".format(epoch_i))
     # logging.info("Training loss: {0}".format(loss_output.data[0]))
