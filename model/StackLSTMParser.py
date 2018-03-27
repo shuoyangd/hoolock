@@ -194,7 +194,7 @@ class StackLSTMParser(nn.Module):
         # there is no sense continue decoding.
         if (num_forbidden_actions == (len(self.actions) - 2)).all():
           break
-        action_dist.masked_fill_(forbidden_actions, -999)
+        action_dist.masked_fill_(Variable(forbidden_actions), -999)
 
       _, action_i = torch.max(action_dist, dim=1) # (batch_size,)
 
