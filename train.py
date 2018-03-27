@@ -82,6 +82,7 @@ def main(options):
   train_data, train_postag, train_action = torch.load(open(options.data_file + ".train", 'rb'), pickle_module=dill)
   dev_data, dev_postag, dev_action = torch.load(open(options.data_file + ".dev", 'rb'), pickle_module=dill)
   vocab, postags, actions = torch.load(open(options.data_file + ".dict", 'rb'), pickle_module=dill)
+  singletons = set([w for w in vocab.itos if vocab.freqs[w] == 1])
   use_pretrained_emb = os.path.isfile(options.data_file + ".pre")
   if use_pretrained_emb:
     train_data_pre, dev_data_pre, pre_vocab = torch.load(open(options.data_file + ".pre", 'rb'), pickle_module=dill)
@@ -114,6 +115,27 @@ def main(options):
   loss = torch.nn.NLLLoss()
   optimizer = eval("torch.optim." + options.optimizer)(filter(lambda param: param.requires_grad, parser.parameters()), options.learning_rate)
 
+
+  def replace_singletons(batch, singletons, unk_idx):
+    """
+      assuming <pad> will be seen more than once
+
+      :param batch:
+      :param singletons:
+      :param unk_idx:
+      :return:
+    """
+
+    shape = batch.size()
+    lin_batch = batch.view(-1)
+
+    for idx, w in enumerate(lin_batch):
+      if int(w) in singletons and torch.rand(1)[0] < 0.5:
+        lin_batch[idx] = unk_idx
+
+    return lin_batch.view(shape)
+
+
   # main training loop
   for epoch_i in range(options.epochs):
     logging.info("At {0} epoch.".format(epoch_i))
@@ -121,6 +143,7 @@ def main(options):
     # for i, batch_i in enumerate(range(len(batchized_train_data))):
       logging.debug("{0} batch updates calculated, with batch {1}.".format(i, batch_i))
       train_data_batch = Variable(batchized_train_data[batch_i]) # (seq_len, batch_size) with dynamic seq_len
+      train_data_batch = replace_singletons(train_data_batch, singletons, vocab.stoi["<unk>"])
       train_data_mask_batch = Variable(batchized_train_data_mask[batch_i]) # (seq_len, batch_size) with dynamic seq_len
       train_postag_batch = Variable(batchized_train_postag[batch_i]) # (seq_len, batch_size) with dynamic seq_len
       train_action_batch = Variable(batchized_train_action[batch_i]) # (seq_len, batch_size) with dynamic seq_len
