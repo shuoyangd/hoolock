@@ -72,8 +72,8 @@ class StackLSTMCell(nn.Module):
 
     batch_size = input.size(0)
     indexes = torch.arange(0, batch_size).type(self.long_dtype)
-    cur_hidden = self.hidden_stack[self.pos.data, indexes, :, :]
-    cur_cell = self.cell_stack[self.pos.data, indexes, :, :]
+    cur_hidden = self.hidden_stack[self.pos.data, indexes, :, :].clone()
+    cur_cell = self.cell_stack[self.pos.data, indexes, :, :].clone()
     next_hidden, next_cell = self.lstm(input, (cur_hidden, cur_cell))
 
     self.hidden_stack[(self.pos + 1).data, indexes, :, :] = next_hidden
