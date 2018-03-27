@@ -3,6 +3,9 @@ import pdb
 import torch
 from torch.autograd import Variable
 
+
+### batch-related stuff ###
+
 def truncate_or_pad(tensor, dim, length, pad_index=0):
 
   """
@@ -58,8 +61,9 @@ def advanced_batchize(data, batch_size, pad_index):
   if len(sorted_data) % batch_size != 0:
     batch_data = sorted_data[len(sorted_data) // batch_size * batch_size:]
     seq_len = len(batch_data[-1])
-    batch_tensor = (torch.ones((seq_len, batch_size)) * pad_index).long()
-    mask_tensor = torch.zeros((seq_len, batch_size)).byte()
+    final_batch_size = len(batch_data)
+    batch_tensor = (torch.ones((seq_len, final_batch_size)) * pad_index).long()
+    mask_tensor = torch.zeros((seq_len, final_batch_size)).byte()
     for idx, sent_data in enumerate(batch_data):
       batch_tensor[0:len(sent_data), idx] = sent_data
       mask_tensor[0:len(sent_data), idx] = 1
@@ -124,6 +128,8 @@ def batchize(tensor, batch_size, pad_index):
   padded_tensor = truncate_or_pad(tensor, 0, num_batched_instances * batch_size, pad_index)
   return padded_tensor.view(batched_size)
 
+### revert ###
+
 def revert(tensor, dim):
   if type(tensor) == torch.autograd.Variable:
     dtype = type(tensor.data)
@@ -160,7 +166,7 @@ def masked_revert(tensor, mask, dim):
   """
   seq_len = mask.size(dim)
   mask = mask.float()
-  n_unmasked = (torch.sum(mask, dim=dim) - 1).long()
+  n_unmasked = (torch.sum(mask, dim=dim) - 1).long()  # marks the position of the last non-masked element
   sgn_mask = (1 - 2 * mask).long()
   sgn_mask[0, :] = n_unmasked
   masked_rev_idx = torch.cumsum(sgn_mask, dim=dim)
