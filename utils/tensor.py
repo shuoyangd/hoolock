@@ -101,8 +101,9 @@ def advanced_batchize_no_sort(data, batch_size, pad_index, order=None):
   if len(data) % batch_size != 0:
     batch_data = data[len(data) // batch_size * batch_size:]
     seq_len = max([len(batch_data[i]) for i in range(len(batch_data))])  # find longest seq
-    batch_tensor = (torch.ones((seq_len, batch_size)) * pad_index).long()
-    mask_tensor = torch.zeros((seq_len, batch_size)).byte()
+    final_batch_size = len(batch_data)
+    batch_tensor = (torch.ones((seq_len, final_batch_size)) * pad_index).long()
+    mask_tensor = torch.zeros((seq_len, final_batch_size)).byte()
     for idx, sent_data in enumerate(batch_data):
       batch_tensor[0:len(sent_data), idx] = sent_data
       mask_tensor[0:len(sent_data), idx] = 1
