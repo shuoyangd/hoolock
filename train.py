@@ -60,6 +60,9 @@ opt_parser.add_argument("--exposure_eps", default=1.0, type=float,
                              "the golden transition operations during training.")
 opt_parser.add_argument("--num_lstm_layers", default=2, type=int,
                         help="Number of StackLSTM and buffer-side LSTM layers. (default=2)")
+opt_parser.add_argument("--use_token_highway", default=False, action='store_true',
+                        help="Use the highway connection between composed word embedding and parser state summary. (default=False)")
+
 
 # optimizer
 opt_parser.add_argument("--epochs", default=20, type=int,
@@ -184,6 +187,7 @@ def main(options):
 
       logging.debug(loss_output.data[0])
       _, pred = output_batch.max(dim=1)
+      print(pred.data.tolist())
       hit = sum(map(lambda x: 1 if x[0] == x[1] else 0, zip(pred.data.tolist(), train_action_batch.data.tolist())))
       logging.debug("pred accuracy: {0}".format(hit / len(output_batch)))
       # train_action_batch = train_action_batch_archiv
