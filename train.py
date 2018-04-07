@@ -205,7 +205,7 @@ def main(options):
       del train_data_mask_batch
       del train_postag_batch
       del train_action_batch
-      if train_data_pre_batch:
+      if use_pretrained_emb:
         del train_data_pre_batch
 
     dev_loss = 0.0
@@ -243,7 +243,7 @@ def main(options):
       del dev_data_mask_batch
       del dev_postag_batch
       del dev_action_batch
-      if dev_data_pre_batch:
+      if use_pretrained_emb:
         del dev_data_pre_batch
 
     logging.info("End of {0} epoch: ".format(epoch_i))
