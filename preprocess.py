@@ -40,10 +40,10 @@ def make_action_str(oracle_row):
   action_str = oracle_row["OP"]
   if "DEPREL" in oracle_row:
     action_str += ("|" + oracle_row["DEPREL"])
-  if "UPOSTAG" in oracle_row:
-    action_str += ("|" + oracle_row["UPOSTAG"])
-  if "XPOSTAG" in oracle_row:
-    action_str += ("|" + oracle_row["XPOSTAG"])
+  # if "UPOSTAG" in oracle_row:
+  #   action_str += ("|" + oracle_row["UPOSTAG"])
+  # if "XPOSTAG" in oracle_row:
+  #   action_str += ("|" + oracle_row["XPOSTAG"])
   return action_str
 
 

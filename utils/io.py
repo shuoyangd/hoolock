@@ -85,9 +85,12 @@ class OracleReader:
         if len(columns) >= 4:
           row["UPOSTAG"] = columns[2]
           row["XPOSTAG"] = columns[3]
-      else:
-        row["UPOSTAG"] = columns[1]
-        row["XPOSTAG"] = columns[2]
+        elif len(columns) >= 3:
+          row["UPOSTAG"] = columns[1]
+          row["XPOSTAG"] = columns[2]
+        else:
+          row["UPOSTAG"] = "POSX"
+          row["XPOSTAG"] = "POSX"
       sent.append(row)
       row_str = self.file.readline().strip()
     return sent
@@ -243,7 +246,7 @@ class Oracle2CoNLLWriter:
           output[stack[0]] = output_str(stack[0], j, relation, ref_lines)
           stack = stack[1:]
         elif t["OP"] == 'Right-Arc':
-          pos[j] = t["UPOSTAG"]
+          # pos[j] = t["UPOSTAG"]
           relation = t["DEPREL"]
           parent[j] = stack[0]
           # output[j] = "%d\t%s" % (stack[0], relation)
@@ -251,7 +254,7 @@ class Oracle2CoNLLWriter:
           buf = buf[1:]
           stack = [j] + stack
         elif t["OP"] == 'Shift':
-          pos[j] = t["UPOSTAG"]
+          # pos[j] = t["UPOSTAG"]
           stack = [j] + stack
           buf = buf[1:]
         else:
@@ -287,7 +290,7 @@ class Oracle2CoNLLWriter:
           output[stack[0]] = output_str(stack[0], stack[1], relation, ref_lines)
           stack = stack[1:]
         elif t["OP"] == 'Shift':
-          pos[j] = t["UPOSTAG"]
+          # pos[j] = t["UPOSTAG"]
           stack = [j] + stack
           buf = buf[1:]
 
