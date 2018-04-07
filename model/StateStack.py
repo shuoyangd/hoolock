@@ -63,17 +63,10 @@ class StateStack(nn.Module):
     :return: hidden (batch_size, hidden_dim)
     """
 
-    # pdb.set_trace()
     indexes = torch.arange(0, self.batch_size).type(self.long_dtype)
-    push_indexes = torch.arange(0, self.batch_size).type(self.long_dtype)[(op == 1).data]
-
-    if len(push_indexes) != 0:
-      self.hidden_stack[(self.pos + 1)[push_indexes].data, push_indexes, :] = input[push_indexes, :]
-
+    self.hidden_stack[(self.pos + 1).data, indexes, :] = input
     self.pos += op
     hidden_ret = self.hidden_stack[self.pos.data, indexes, :].clone()
-
-    # print(hidden_ret.requires_grad)
     return hidden_ret
 
   def init(self, init_var=None):
@@ -85,7 +78,6 @@ class StateStack(nn.Module):
   def head(self):
     dtype = self.hidden_stack.long().data.type()
     ret = self.hidden_stack[self.pos.data, torch.arange(0, len(self.pos)).type(dtype), :].clone()
-    # print(ret.requires_grad)
     return ret
 
   def size(self):

@@ -163,7 +163,7 @@ class StackLSTMParser(nn.Module):
       buffer_cells[t_i, :, :] = bc[:, :, -1]
 
     self.buffer.build_stack(batch_size, seq_len, buffer_hiddens, buffer_cells, tokens_mask, self.gpuid)
-    self.token_stack.build_stack(batch_size, seq_len)
+    self.token_stack.build_stack(batch_size, self.stack_size)
     self.token_buffer.build_stack(batch_size, seq_len, token_comp_output_rev, Variable(torch.zeros(token_comp_output_rev.size())), tokens_mask, self.gpuid) # don't need cell for this
     self.stack(self.root_input.unsqueeze(0).expand(batch_size, self.input_dim), Variable(torch.ones(batch_size).type(self.long_dtype)))
 
