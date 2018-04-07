@@ -187,7 +187,6 @@ def main(options):
 
       logging.debug(loss_output.data[0])
       _, pred = output_batch.max(dim=1)
-      print(pred.data.tolist())
       hit = sum(map(lambda x: 1 if x[0] == x[1] else 0, zip(pred.data.tolist(), train_action_batch.data.tolist())))
       logging.debug("pred accuracy: {0}".format(hit / len(output_batch)))
       # train_action_batch = train_action_batch_archiv
