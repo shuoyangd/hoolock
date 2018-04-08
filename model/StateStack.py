@@ -18,7 +18,7 @@ class StateStack(nn.Module):
 
     self.initial_hidden = self.init(init_var)
 
-  def build_stack(self, batch_size, seq_len, hiddens=None, cells=None, hidden_masks=None, gpuid=[]):
+  def build_stack(self, batch_size, seq_len, hiddens=None, hidden_masks=None, gpuid=[]):
     """
     :param hiddens: of type torch.autograd.Variable, (seq_len, batch_size, hidden_size)
     :param cells: of type torch.autograd.Variable, (seq_len, batch_size, hidden_size)
@@ -51,23 +51,74 @@ class StateStack(nn.Module):
 
     # for padded sequences, the pos would be 0. That's why we need a padding state in the buffer.
     if hidden_masks is not None:
-      self.pos = torch.sum(hidden_masks, dim=0).long() # note there is a initial state padding
+      self.pos = torch.sum(hidden_masks, dim=0).type(self.long_dtype) # note there is a initial state padding
     else:
       self.pos = Variable(torch.LongTensor([0] * self.batch_size).type(self.long_dtype))
 
   def forward(self, input, op):
     """
+    stack needs to be built before this is called.
+
+    :param input: (batch_size, input_size), input vector, in batch.
+    :param op: (batch_size,), stack operations, in batch (-1 means pop, 1 means push, 0 means hold).
+    :return: (hidden, cell): both are (batch_size, hidden_dim)
+    """
+    batch_size = input.size(0)
+    push_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == 1).data]
+    pop_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == -1).data]
+    hold_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == 0).data]
+
+    if len(push_indexes) != 0:
+      input = input[push_indexes, :]
+      # cur_hidden = self.hidden_stack[self.pos[push_indexes].data, push_indexes, :, :].clone()  # (push_indexes, hidden_size, num_layers)
+      # cur_cell = self.cell_stack[self.pos[push_indexes].data, push_indexes, :, :].clone()  # (push_indexes, hidden_size, num_layers)
+      # next_hidden, next_cell = self.lstm(input, (cur_hidden, cur_cell))
+      next_hidden = input.clone()
+    if len(pop_indexes) != 0:
+      prev_hidden = self.hidden_stack[((self.pos[pop_indexes] - 1) % (self.seq_len + 1)).data, pop_indexes, :].clone()
+      # prev_cell = self.cell_stack[((self.pos[pop_indexes] - 1) % (self.stack_size + 1)).data, pop_indexes, :, :].clone()
+      # next_hidden, next_cell = self.lstm(input, (prev_hidden, prev_cell))
+
+    if len(push_indexes) != 0:
+      self.hidden_stack[(self.pos[push_indexes] + 1).data, push_indexes, :] = next_hidden
+
+    if len(hold_indexes) != 0:
+      cur_hidden = self.hidden_stack[self.pos[hold_indexes].data, hold_indexes, :].clone()  # (hold_indexes, hidden_size, num_layers)
+      # cur_cell = self.cell_stack[self.pos[hold_indexes].data, hold_indexes, :, :].clone()  # (hold_indexes, hidden_size, num_layers)
+
+    # we only care about the hidden & cell states of the last layer for return values
+    hidden_ret = Variable(torch.zeros(batch_size, self.hidden_size).type(self.dtype))
+    # cell_ret = Variable(torch.zeros(batch_size, self.hidden_size).type(self.dtype))
+    if len(hold_indexes) != 0:
+      hidden_ret[hold_indexes] = cur_hidden
+      # cell_ret[hold_indexes] = cur_cell[:, :, -1]
+    if len(push_indexes) != 0:
+      hidden_ret[push_indexes] = next_hidden
+      # cell_ret[push_indexes] = next_cell[:, :, -1]
+    if len(pop_indexes) != 0:
+      hidden_ret[pop_indexes] = prev_hidden
+      # cell_ret[pop_indexes] = prev_cell[:, :, -1]
+
+    # position overflow/underflow protection should not be done here,
+    # they may not be desirable depending on the application
+    self.pos += op
+
+    # return hidden_ret, cell_ret
+    return hidden_ret
+
+  """
+  def forward(self, input, op):
 
     :param input: (batch_size, input_size), input tensor, in batch.
     :param op: (batch_size,), stack operations, in batch (-1 means pop, 0 means hold, 1 means push).
     :return: hidden (batch_size, hidden_dim)
-    """
 
     indexes = torch.arange(0, self.batch_size).type(self.long_dtype)
     self.hidden_stack[(self.pos + 1).data, indexes, :] = input
     self.pos += op
     hidden_ret = self.hidden_stack[self.pos.data, indexes, :].clone()
     return hidden_ret
+  """
 
   def init(self, init_var=None):
     if init_var is None:
