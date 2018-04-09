@@ -236,9 +236,9 @@ class StackLSTMParser(nn.Module):
       # update stack, buffer and action state
       stack_state, _ = self.stack(stack_input, stack_op)
       buffer_state = self.buffer(stack_state, buffer_op) # actually nothing will be pushed
-      stack_input = self.token_buffer.head()
       token_stack_state = self.token_stack(stack_input, stack_op)
       token_buffer_state = self.token_buffer(stack_input, buffer_op)
+      stack_input = self.token_buffer.head()
       action_input = self.action_emb(action_i) # (batch_size, hid_dim)
       action_state, action_cell = self.history(action_input, (action_state, action_cell))
 
