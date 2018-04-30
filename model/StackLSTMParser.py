@@ -122,6 +122,34 @@ class StackLSTMParser(nn.Module):
       )
     self.state_to_actions = nn.Linear(options.state_dim, len(actions))
 
+    # composition
+    self.composition_k = options.composition_k
+    if self.composition_k > 0:
+      self.W_h = nn.Bilinear(options.action_emb_dim * self.composition_k * 2, self.input_dim * self.composition_k * 2, 1, bias=False)
+      self.W_d = nn.Bilinear(options.action_emb_dim * self.composition_k * 2, self.input_dim * self.composition_k * 2, 1, bias=False)
+      self.W_b = nn.Bilinear(options.action_emb_dim * self.composition_k * 2, self.input_dim * self.composition_k * 2, 1, bias=False)
+      self.composition_func = nn.Sequential(
+          nn.Linear(self.input_dim * 2 + options.rel_emb_dim, self.input_dim),
+          nn.Tanh()
+      )
+
+      self.relations = [ "NONE" ]
+      self.a2r = {}
+      for a_id, action in enumerate(actions):
+        if '|' in action:
+          rel = action.split('|')[1]
+          if rel not in self.relations:
+           rel_id = len(self.relations)
+           self.relations.append(rel)
+          else:
+           rel_id = self.relations.index(rel)
+          self.a2r[a_id] = rel_id
+        else:
+          self.a2r[a_id] = 0
+
+      self.relations.append("NONE")  # reserved for SHIFT or REDUCE
+      self.rel_emb = nn.Embedding(len(self.relations), options.rel_emb_dim)
+
     self.softmax = nn.LogSoftmax() # LogSoftmax works on final dimension only for two dimension tensors. Be careful.
 
 
@@ -234,6 +262,7 @@ class StackLSTMParser(nn.Module):
       # buffer_op = buffer_op.masked_fill(buffer_pop_boundary, 0)
 
       # update stack, buffer and action state
+      self.token_composition(action_i, self.composition_k)  # not sure if token composition should happen before or after stack/buffer op, but let's try this
       stack_state, _ = self.stack(stack_input, stack_op)
       buffer_state = self.buffer(stack_state, buffer_op) # actually nothing will be pushed
       token_stack_state = self.token_stack(stack_input, stack_op)
@@ -250,6 +279,43 @@ class StackLSTMParser(nn.Module):
     # print("forbidden actions = {0}".format(torch.sum(forbidden_actions, dim=1).tolist()))
 
     return outputs
+
+
+  def token_composition(self, action_ids, k):
+    rel_ids = Variable(torch.LongTensor([ self.a2r[action_id.data[0]] for action_id in action_ids ]))  # XXX: gradient won't propagate through this
+    batch_size = len(action_ids)
+
+    action_emb = self.action_emb(action_ids).unsqueeze(1).expand(-1, k * 2, -1)  # (batch_size, k * 2, action_emb_size)
+    active_token_emb = Variable(torch.Tensor(batch_size, k * 2, self.input_dim)).type(self.dtype)  # (batch_size, k * 2, input_dim)
+    stack_pos = self.token_stack.pos.unsqueeze(0).expand(k, -1).data.clone()  # (k, batch_size)
+    buffer_pos = self.token_buffer.pos.unsqueeze(0).expand(k, -1).data.clone()  # (k, batch_size)
+    for kk in range(k):
+      stack_pos[kk] -= kk
+      buffer_pos[kk] -= kk
+    stack_pos[(stack_pos < 0)] = 0
+    buffer_pos[(buffer_pos < 0)] = 0
+    active_token_emb[:, 0:k, :] = \
+      self.token_stack.hidden_stack[ stack_pos, torch.arange(0, batch_size).unsqueeze(0).expand(k, -1).type(self.long_dtype), :]  # (batch_size, k, input_dim)
+    active_token_emb[:, k:k*2, :] = \
+      self.token_buffer.hidden_stack[ buffer_pos, torch.arange(0, batch_size).unsqueeze(0).expand(k, -1).type(self.long_dtype), :]  # (batch_size, k, input_dim)
+
+    alpha_h = self.W_h(action_emb.contiguous().view(batch_size, -1), active_token_emb.contiguous().view(batch_size, -1))  # (batch_size, k * 2)
+    alpha_d = self.W_d(action_emb.contiguous().view(batch_size, -1), active_token_emb.contiguous().view(batch_size, -1))
+    alpha_b = self.W_b(action_emb.contiguous().view(batch_size, -1), active_token_emb.contiguous().view(batch_size, -1))
+
+    alpha_h = torch.exp(alpha_h) / torch.sum(torch.exp(alpha_h))
+    alpha_d = torch.exp(alpha_d) / torch.sum(torch.exp(alpha_d))
+    alpha_b = 1 / (1 + torch.exp(-alpha_b))
+
+    h = torch.sum(active_token_emb.t() * alpha_h, dim=0)  # (batch_size, input_dim)
+    d = torch.sum(active_token_emb.t() * alpha_d, dim=0)  # (batch_size, input_dim)
+    r = self.rel_emb(rel_ids)  # (batch_size, rel_dim)
+
+    c = self.composition_func(torch.cat([h, d, r], dim=1))  # (batch_size, input_dim)
+    c = c.unsqueeze(0).expand(k, -1, -1)  # (k, batch_size, input_dim)
+
+    self.token_stack.hidden_stack[stack_pos, torch.arange(0, stack_pos.size(1)).type(self.long_dtype), :] = torch.sum(c * alpha_b[0:k], dim=0)
+    self.token_buffer.hidden_stack[buffer_pos, torch.arange(0, buffer_pos.size(1)).type(self.long_dtype), :] = torch.sum(c * alpha_b[k:2*k], dim=0)
 
 
   def get_valid_actions(self, batch_size):

@@ -43,6 +43,8 @@ opt_parser.add_argument("--postag_emb_dim", default=12, type=int,
                         help="Size of the POS tag embedding. (default=12)")
 opt_parser.add_argument("--action_emb_dim", default=16, type=int,
                         help="Size of the transition action embedding. (default=16)")
+opt_parser.add_argument("--rel_emb_dim", default=16, type=int,
+                        help="Size of the dependency relation embedding used for composition function. (default=16)")
 opt_parser.add_argument("--hid_dim", default=100, type=int,
                         help="Size of the LSTM hidden embedding. (default=100)")
 opt_parser.add_argument("--input_dim", default=60, type=int,
@@ -62,6 +64,8 @@ opt_parser.add_argument("--num_lstm_layers", default=2, type=int,
                         help="Number of StackLSTM and buffer-side LSTM layers. (default=2)")
 opt_parser.add_argument("--use_token_highway", default=False, action='store_true',
                         help="Use the highway connection between composed word embedding and parser state summary. (default=False)")
+opt_parser.add_argument("--composition_k", default=0, type=int,
+                        help="k-value for composition on the token embeddings. 0 means no composition would happen. (default=0)")
 
 
 # optimizer
