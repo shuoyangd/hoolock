@@ -125,9 +125,9 @@ class StackLSTMParser(nn.Module):
     # composition
     self.composition_k = options.composition_k
     if self.composition_k > 0:
-      self.W_h = nn.Bilinear(options.action_emb_dim * self.composition_k * 2, self.input_dim * self.composition_k * 2, 1, bias=False)
-      self.W_d = nn.Bilinear(options.action_emb_dim * self.composition_k * 2, self.input_dim * self.composition_k * 2, 1, bias=False)
-      self.W_b = nn.Bilinear(options.action_emb_dim * self.composition_k * 2, self.input_dim * self.composition_k * 2, 1, bias=False)
+      self.W_h = nn.Bilinear(options.action_emb_dim, self.input_dim, 1, bias=False)
+      self.W_d = nn.Bilinear(options.action_emb_dim, self.input_dim, 1, bias=False)
+      self.W_b = nn.Bilinear(options.action_emb_dim, self.input_dim, 1, bias=False)
       self.composition_func = nn.Sequential(
           nn.Linear(self.input_dim * 2 + options.rel_emb_dim, self.input_dim),
           nn.Tanh()
@@ -284,6 +284,7 @@ class StackLSTMParser(nn.Module):
   def token_composition(self, action_ids, k):
     rel_ids = Variable(torch.LongTensor([ self.a2r[action_id.data[0]] for action_id in action_ids ]))  # XXX: gradient won't propagate through this
     batch_size = len(action_ids)
+    emb_size = self.action_emb.embedding_dim
 
     action_emb = self.action_emb(action_ids).unsqueeze(1).expand(-1, k * 2, -1)  # (batch_size, k * 2, action_emb_size)
     active_token_emb = Variable(torch.Tensor(batch_size, k * 2, self.input_dim)).type(self.dtype)  # (batch_size, k * 2, input_dim)
@@ -299,23 +300,31 @@ class StackLSTMParser(nn.Module):
     active_token_emb[:, k:k*2, :] = \
       self.token_buffer.hidden_stack[ buffer_pos, torch.arange(0, batch_size).unsqueeze(0).expand(k, -1).type(self.long_dtype), :]  # (batch_size, k, input_dim)
 
-    alpha_h = self.W_h(action_emb.contiguous().view(batch_size, -1), active_token_emb.contiguous().view(batch_size, -1))  # (batch_size, k * 2)
-    alpha_d = self.W_d(action_emb.contiguous().view(batch_size, -1), active_token_emb.contiguous().view(batch_size, -1))
-    alpha_b = self.W_b(action_emb.contiguous().view(batch_size, -1), active_token_emb.contiguous().view(batch_size, -1))
+    # calculate attention weights
+    alpha_h = self.W_h(action_emb.contiguous().view(-1, emb_size), active_token_emb.contiguous().view(-1, self.input_dim))  # (batch_size * k * 2)
+    alpha_d = self.W_d(action_emb.contiguous().view(-1, emb_size), active_token_emb.contiguous().view(-1, self.input_dim))
+    alpha_b = self.W_b(action_emb.contiguous().view(-1, emb_size), active_token_emb.contiguous().view(-1, self.input_dim))
 
-    alpha_h = torch.exp(alpha_h) / torch.sum(torch.exp(alpha_h))
+    alpha_h = alpha_h.view(batch_size, -1)  # (batch_size, k * 2)
+    alpha_d = alpha_d.view(batch_size, -1)  # (batch_size, k * 2)
+    alpha_b = alpha_b.view(batch_size, -1)  # (batch_size, k * 2)
+
+    alpha_h = torch.exp(alpha_h) / torch.sum(torch.exp(alpha_h))  # (batch_size, k * 2)
     alpha_d = torch.exp(alpha_d) / torch.sum(torch.exp(alpha_d))
     alpha_b = 1 / (1 + torch.exp(-alpha_b))
 
-    h = torch.sum(active_token_emb.t() * alpha_h, dim=0)  # (batch_size, input_dim)
-    d = torch.sum(active_token_emb.t() * alpha_d, dim=0)  # (batch_size, input_dim)
+    # use weighted sum to get attentional h, d, and r
+    h = torch.sum(active_token_emb.permute(2, 0, 1) * alpha_h, dim=2).t()  # (input_dim, batch_size, k*2) * (batch_size, k * 2) -> sum dim2 -> transpose -> (batch_size, input_dim)
+    d = torch.sum(active_token_emb.permute(2, 0, 1) * alpha_d, dim=2).t()  # (input_dim, batch_size, k*2) * (batch_size, k * 2) -> sum dim2 -> transpose -> (batch_size, input_dim)
     r = self.rel_emb(rel_ids)  # (batch_size, rel_dim)
 
+    # compose
     c = self.composition_func(torch.cat([h, d, r], dim=1))  # (batch_size, input_dim)
     c = c.unsqueeze(0).expand(k, -1, -1)  # (k, batch_size, input_dim)
 
-    self.token_stack.hidden_stack[stack_pos, torch.arange(0, stack_pos.size(1)).type(self.long_dtype), :] = torch.sum(c * alpha_b[0:k], dim=0)
-    self.token_buffer.hidden_stack[buffer_pos, torch.arange(0, buffer_pos.size(1)).type(self.long_dtype), :] = torch.sum(c * alpha_b[k:2*k], dim=0)
+    # c does not need to be summed over the k dimension because they'll be written to different units of stack / buffer
+    self.token_stack.hidden_stack[stack_pos, torch.arange(0, stack_pos.size(1)).type(self.long_dtype), :] = (c.permute(2, 1, 0) * alpha_b[:, 0:k]).permute(2, 1, 0)  # (input_dim, batch_size, k) * (batch_size, k) -> permute -> (k, batch_size, input_dim)
+    self.token_buffer.hidden_stack[buffer_pos, torch.arange(0, buffer_pos.size(1)).type(self.long_dtype), :] = (c.permute(2, 1, 0) * alpha_b[:, k:2*k]).permute(2, 1, 0)  # (input_dim, batch_size, k) * (batch_size, k) -> permute -> (k, batch_size, input_dim)
 
 
   def get_valid_actions(self, batch_size):
