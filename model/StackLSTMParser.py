@@ -266,7 +266,7 @@ class StackLSTMParser(nn.Module):
       # buffer_op = buffer_op.masked_fill(buffer_pop_boundary, 0)
 
       # update stack, buffer and action state
-      if self.composition_k < 1:
+      if self.composition_k > 0:
         self.token_composition(action_i, self.composition_k)  # not sure if token composition should happen before or after stack/buffer op, but let's try this
       stack_state, _ = self.stack(stack_input, stack_op)
       buffer_state = self.buffer(stack_state, buffer_op) # actually nothing will be pushed
@@ -335,8 +335,10 @@ class StackLSTMParser(nn.Module):
     c = c.unsqueeze(0).expand(k, -1, -1)  # (k, batch_size, input_dim)
 
     # c does not need to be summed over the k dimension because they'll be written to different units of stack / buffer
-    self.token_stack.hidden_stack[stack_pos, torch.arange(0, stack_pos.size(1)).type(self.long_dtype), :] = (c.permute(2, 1, 0) * alpha_b[:, 0:k]).permute(2, 1, 0)  # (input_dim, batch_size, k) * (batch_size, k) -> permute -> (k, batch_size, input_dim)
-    self.token_buffer.hidden_stack[buffer_pos, torch.arange(0, buffer_pos.size(1)).type(self.long_dtype), :] = (c.permute(2, 1, 0) * alpha_b[:, k:2*k]).permute(2, 1, 0)  # (input_dim, batch_size, k) * (batch_size, k) -> permute -> (k, batch_size, input_dim)
+    stack_elements = self.token_stack.hidden_stack[stack_pos, torch.arange(0, stack_pos.size(1)).type(self.long_dtype), :]
+    buffer_elements = self.token_buffer.hidden_stack[buffer_pos, torch.arange(0, buffer_pos.size(1)).type(self.long_dtype), :]
+    self.token_stack.hidden_stack[stack_pos, torch.arange(0, stack_pos.size(1)).type(self.long_dtype), :] = (stack_elements.permute(2, 1, 0) * (1 - alpha_b[:, 0:k])).permute(2, 1, 0) + (c.permute(2, 1, 0) * alpha_b[:, 0:k]).permute(2, 1, 0)  # (input_dim, batch_size, k) * (batch_size, k) -> permute -> (k, batch_size, input_dim)
+    self.token_buffer.hidden_stack[buffer_pos, torch.arange(0, buffer_pos.size(1)).type(self.long_dtype), :] += (buffer_elements.permute(2, 1, 0) * (1 - alpha_b[:, k:2*k])).permute(2, 1, 0) + (c.permute(2, 1, 0) * alpha_b[:, k:2*k]).permute(2, 1, 0)  # (input_dim, batch_size, k) * (batch_size, k) -> permute -> (k, batch_size, input_dim)
 
 
   def get_valid_actions(self, batch_size):
