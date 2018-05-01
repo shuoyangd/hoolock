@@ -28,6 +28,7 @@ class TransitionSystems(Enum):
 AER_map = {"Shift": (1, -1), "Reduce": (-1, 0), "Left-Arc": (-1, 0), "Right-Arc": (1, -1)}
 AH_map = {"Shift": (1, -1), "Left-Arc": (-1, 0), "Right-Arc": (-1, 0)}
 
+
 class StackLSTMParser(nn.Module):
 
   def __init__(self, vocab, actions, options, pre_vocab=None, postags=None):
@@ -151,6 +152,9 @@ class StackLSTMParser(nn.Module):
       self.rel_emb = nn.Embedding(len(self.relations), options.rel_emb_dim)
 
     self.softmax = nn.LogSoftmax() # LogSoftmax works on final dimension only for two dimension tensors. Be careful.
+
+    self.composition_logging_factor = 1000
+    self.composition_logging_count = 0
 
 
   def forward(self, tokens, tokens_mask, pre_tokens=None, postags=None, actions=None):
@@ -312,6 +316,13 @@ class StackLSTMParser(nn.Module):
     alpha_h = torch.nn.functional.softmax(alpha_h)
     alpha_d = torch.nn.functional.softmax(alpha_d)
     alpha_b = torch.nn.functional.sigmoid(alpha_b)
+
+    self.composition_logging_count += 1
+    if self.composition_logging_count % self.composition_logging_factor == 0:
+      logging.info("sample action: {0}".format(self.actions[action_ids.data[0]]))
+      logging.info("head attention value sample: {0}".format(alpha_h[0, :].data.tolist()))
+      logging.info("dependency attention value sample: {0}".format(alpha_d[0, :].data.tolist()))
+      logging.info("writing head weights value sample; {0}".format(alpha_b[0, :].data.tolist()))
 
     # use weighted sum to get attentional h, d, and r
     h = torch.sum(active_token_emb.permute(2, 0, 1) * alpha_h, dim=2).t()  # (input_dim, batch_size, k*2) * (batch_size, k * 2) -> sum dim2 -> transpose -> (batch_size, input_dim)
