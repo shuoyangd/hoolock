@@ -266,7 +266,8 @@ class StackLSTMParser(nn.Module):
       # buffer_op = buffer_op.masked_fill(buffer_pop_boundary, 0)
 
       # update stack, buffer and action state
-      self.token_composition(action_i, self.composition_k)  # not sure if token composition should happen before or after stack/buffer op, but let's try this
+      if self.composition_k < 1:
+        self.token_composition(action_i, self.composition_k)  # not sure if token composition should happen before or after stack/buffer op, but let's try this
       stack_state, _ = self.stack(stack_input, stack_op)
       buffer_state = self.buffer(stack_state, buffer_op) # actually nothing will be pushed
       token_stack_state = self.token_stack(stack_input, stack_op)
