@@ -134,7 +134,7 @@ class StackLSTMParser(nn.Module):
       )
 
       self.relations = [ "NONE" ]
-      self.a2r = {}
+      self.a2r = torch.LongTensor(len(self.actions)).type(self.long_dtype)
       for a_id, action in enumerate(actions):
         if '|' in action:
           rel = action.split('|')[1]
@@ -282,7 +282,7 @@ class StackLSTMParser(nn.Module):
 
 
   def token_composition(self, action_ids, k):
-    rel_ids = Variable(torch.LongTensor([ self.a2r[action_id.data[0]] for action_id in action_ids ]))  # XXX: gradient won't propagate through this
+    rel_ids = Variable(self.a2r[action_ids.data])  # XXX: gradient won't propagate through this
     batch_size = len(action_ids)
     emb_size = self.action_emb.embedding_dim
 
@@ -309,9 +309,9 @@ class StackLSTMParser(nn.Module):
     alpha_d = alpha_d.view(batch_size, -1)  # (batch_size, k * 2)
     alpha_b = alpha_b.view(batch_size, -1)  # (batch_size, k * 2)
 
-    alpha_h = torch.exp(alpha_h) / torch.sum(torch.exp(alpha_h))  # (batch_size, k * 2)
-    alpha_d = torch.exp(alpha_d) / torch.sum(torch.exp(alpha_d))
-    alpha_b = 1 / (1 + torch.exp(-alpha_b))
+    alpha_h = torch.nn.functional.softmax(alpha_h)
+    alpha_d = torch.nn.functional.softmax(alpha_d)
+    alpha_b = torch.nn.functional.sigmoid(alpha_b)
 
     # use weighted sum to get attentional h, d, and r
     h = torch.sum(active_token_emb.permute(2, 0, 1) * alpha_h, dim=2).t()  # (input_dim, batch_size, k*2) * (batch_size, k * 2) -> sum dim2 -> transpose -> (batch_size, input_dim)
