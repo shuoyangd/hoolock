@@ -338,7 +338,7 @@ class StackLSTMParser(nn.Module):
     stack_elements = self.token_stack.hidden_stack[stack_pos, torch.arange(0, stack_pos.size(1)).type(self.long_dtype), :]
     buffer_elements = self.token_buffer.hidden_stack[buffer_pos, torch.arange(0, buffer_pos.size(1)).type(self.long_dtype), :]
     self.token_stack.hidden_stack[stack_pos, torch.arange(0, stack_pos.size(1)).type(self.long_dtype), :] = (stack_elements.permute(2, 1, 0) * (1 - alpha_b[:, 0:k])).permute(2, 1, 0) + (c.permute(2, 1, 0) * alpha_b[:, 0:k]).permute(2, 1, 0)  # (input_dim, batch_size, k) * (batch_size, k) -> permute -> (k, batch_size, input_dim)
-    self.token_buffer.hidden_stack[buffer_pos, torch.arange(0, buffer_pos.size(1)).type(self.long_dtype), :] += (buffer_elements.permute(2, 1, 0) * (1 - alpha_b[:, k:2*k])).permute(2, 1, 0) + (c.permute(2, 1, 0) * alpha_b[:, k:2*k]).permute(2, 1, 0)  # (input_dim, batch_size, k) * (batch_size, k) -> permute -> (k, batch_size, input_dim)
+    self.token_buffer.hidden_stack[buffer_pos, torch.arange(0, buffer_pos.size(1)).type(self.long_dtype), :] = (buffer_elements.permute(2, 1, 0) * (1 - alpha_b[:, k:2*k])).permute(2, 1, 0) + (c.permute(2, 1, 0) * alpha_b[:, k:2*k]).permute(2, 1, 0)  # (input_dim, batch_size, k) * (batch_size, k) -> permute -> (k, batch_size, input_dim)
 
 
   def get_valid_actions(self, batch_size):
