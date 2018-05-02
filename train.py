@@ -77,6 +77,10 @@ opt_parser.add_argument("--learning_rate", "-lr", default=1e-3, type=float,
                         help="Learning rate used across all optimizers. (default=1e-3)")
 opt_parser.add_argument("--momentum", default=0.0, type=float,
                         help="Momentum for SGD. (default=0.0)")
+opt_parser.add_argument("--grad_clip", default=-1.0, type=float,
+                        help="Gradient clipping bound. Pass any negative number to disable this functionality. (default=-1.0)")
+opt_parser.add_argument("--l2_norm", default=1e-6, type=float,
+                        help="L2 norm coefficient to the loss function. (default=1e-6)")
 
 def main(options):
 
@@ -120,7 +124,7 @@ def main(options):
   # loss = torch.nn.CrossEntropyLoss()
   # loss = model.Loss.NLLLoss(options.gpuid)
   loss = torch.nn.NLLLoss()
-  optimizer = eval("torch.optim." + options.optimizer)(filter(lambda param: param.requires_grad, parser.parameters()), options.learning_rate)
+  optimizer = eval("torch.optim." + options.optimizer)(filter(lambda param: param.requires_grad, parser.parameters()), options.learning_rate, weight_decay=options.l2_norm)
 
 
   def replace_singletons(batch, singletons, unk_idx):
@@ -179,6 +183,8 @@ def main(options):
 
       optimizer.zero_grad()
       loss_output.backward()
+      if options.grad_clip > 0.0:
+        torch.nn.utils.clip_grad_norm(parser.parameters(), options.grad_clip)
       optimizer.step()
 
       """

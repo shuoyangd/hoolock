@@ -318,6 +318,15 @@ class StackLSTMParser(nn.Module):
     alpha_d = torch.nn.functional.softmax(alpha_d)
     alpha_b = torch.nn.functional.sigmoid(alpha_b)
 
+    if torch.sum(alpha_h).data[0] != torch.sum(alpha_h).data[0]:
+      pdb.set_trace()
+
+    if torch.sum(alpha_d).data[0] != torch.sum(alpha_d).data[0]:
+      pdb.set_trace()
+
+    if torch.sum(alpha_b).data[0] != torch.sum(alpha_b).data[0]:
+      pdb.set_trace()
+
     self.composition_logging_count += 1
     if self.composition_logging_count % self.composition_logging_factor == 0:
       logging.info("sample action: {0}".format(self.actions[action_ids.data[0]]))
