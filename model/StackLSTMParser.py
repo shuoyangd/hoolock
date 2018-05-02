@@ -14,6 +14,7 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S', level=logging.DEBUG)
 
+
 class TransitionSystems(Enum):
   ASd = 0
   AER = 1
@@ -25,8 +26,15 @@ class TransitionSystems(Enum):
   def has_value(cls, value):
     return any(value == item for item in cls)
 
+
 AER_map = {"Shift": (1, -1), "Reduce": (-1, 0), "Left-Arc": (-1, 0), "Right-Arc": (1, -1)}
 AH_map = {"Shift": (1, -1), "Left-Arc": (-1, 0), "Right-Arc": (-1, 0)}
+
+AER_hard_composition_map = {"Shift": ([0, 0], [0, 0], [0, 0]), "Reduce": ([0, 0], [0, 0], [0, 0]),
+                            "Left-Arc": ([0, 1], [1, 0], [0, 1]), "Right-Arc": ([1, 0], [0, 1], [0, 1])}
+AH_hard_composition_map = {"Shift": ([0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]),
+                           "Left-Arc": ([0, 0, 1, 0], [1, 0, 0, 0], [0, 0, 1, 0]),
+                           "Right-Arc": ([0, 1, 0, 0], [1, 0, 0, 0], [0, 1, 0, 0])}
 
 
 class StackLSTMParser(nn.Module):
@@ -124,11 +132,10 @@ class StackLSTMParser(nn.Module):
     self.state_to_actions = nn.Linear(options.state_dim, len(actions))
 
     # composition
+    self.hard_composition = options.hard_composition
     self.composition_k = options.composition_k
-    if self.composition_k > 0:
-      self.W_h = nn.Bilinear(options.action_emb_dim, self.input_dim, 1, bias=False)
-      self.W_d = nn.Bilinear(options.action_emb_dim, self.input_dim, 1, bias=False)
-      self.W_b = nn.Bilinear(options.action_emb_dim, self.input_dim, 1, bias=False)
+
+    if self.hard_composition or self.composition_k > 0:
       self.composition_func = nn.Sequential(
           nn.Linear(self.input_dim * 2 + options.rel_emb_dim, self.input_dim),
           nn.Tanh()
@@ -150,6 +157,29 @@ class StackLSTMParser(nn.Module):
 
       self.relations.append("NONE")  # reserved for SHIFT or REDUCE
       self.rel_emb = nn.Embedding(len(self.relations), options.rel_emb_dim)
+
+    if self.hard_composition:
+      if self.transSys == TransitionSystems.AER:
+        self.composition_k = 1
+      elif self.transSys == TransitionSystems.AH:
+        self.composition_k = 2
+      else:
+        raise NotImplementedError
+
+      self.composition_attn_h = torch.zeros(len(self.actions), self.composition_k * 2).tolist()
+      self.composition_attn_d = torch.zeros(len(self.actions), self.composition_k * 2).tolist()
+      self.composition_attn_b = torch.zeros(len(self.actions), self.composition_k * 2).tolist()
+
+      self.set_hard_composition_mappings()
+
+      self.composition_attn_h = torch.FloatTensor(self.composition_attn_h).type(self.dtype)
+      self.composition_attn_d = torch.FloatTensor(self.composition_attn_d).type(self.dtype)
+      self.composition_attn_b = torch.FloatTensor(self.composition_attn_b).type(self.dtype)
+
+    elif self.composition_k > 0:
+      self.W_h = nn.Bilinear(options.action_emb_dim, self.input_dim, 1, bias=False)
+      self.W_d = nn.Bilinear(options.action_emb_dim, self.input_dim, 1, bias=False)
+      self.W_b = nn.Bilinear(options.action_emb_dim, self.input_dim, 1, bias=False)
 
     self.softmax = nn.LogSoftmax() # LogSoftmax works on final dimension only for two dimension tensors. Be careful.
 
@@ -266,7 +296,7 @@ class StackLSTMParser(nn.Module):
       # buffer_op = buffer_op.masked_fill(buffer_pop_boundary, 0)
 
       # update stack, buffer and action state
-      if self.composition_k > 0:
+      if self.hard_composition or self.composition_k > 0:
         self.token_composition(action_i, self.composition_k)  # not sure if token composition should happen before or after stack/buffer op, but let's try this
       stack_state, _ = self.stack(stack_input, stack_op)
       buffer_state = self.buffer(stack_state, buffer_op) # actually nothing will be pushed
@@ -306,17 +336,22 @@ class StackLSTMParser(nn.Module):
       self.token_buffer.hidden_stack[ buffer_pos, torch.arange(0, batch_size).unsqueeze(0).expand(k, -1).type(self.long_dtype), :]  # (batch_size, k, input_dim)
 
     # calculate attention weights
-    alpha_h = self.W_h(action_emb.contiguous().view(-1, emb_size), active_token_emb.contiguous().view(-1, self.input_dim))  # (batch_size * k * 2)
-    alpha_d = self.W_d(action_emb.contiguous().view(-1, emb_size), active_token_emb.contiguous().view(-1, self.input_dim))
-    alpha_b = self.W_b(action_emb.contiguous().view(-1, emb_size), active_token_emb.contiguous().view(-1, self.input_dim))
+    if self.hard_composition:
+      alpha_h = Variable(self.composition_attn_h[action_ids.data, :])
+      alpha_d = Variable(self.composition_attn_d[action_ids.data, :])
+      alpha_b = Variable(self.composition_attn_b[action_ids.data, :])
+    else:
+      alpha_h = self.W_h(action_emb.contiguous().view(-1, emb_size), active_token_emb.contiguous().view(-1, self.input_dim))  # (batch_size * k * 2)
+      alpha_d = self.W_d(action_emb.contiguous().view(-1, emb_size), active_token_emb.contiguous().view(-1, self.input_dim))
+      alpha_b = self.W_b(action_emb.contiguous().view(-1, emb_size), active_token_emb.contiguous().view(-1, self.input_dim))
 
-    alpha_h = alpha_h.view(batch_size, -1)  # (batch_size, k * 2)
-    alpha_d = alpha_d.view(batch_size, -1)  # (batch_size, k * 2)
-    alpha_b = alpha_b.view(batch_size, -1)  # (batch_size, k * 2)
+      alpha_h = alpha_h.view(batch_size, -1)  # (batch_size, k * 2)
+      alpha_d = alpha_d.view(batch_size, -1)  # (batch_size, k * 2)
+      alpha_b = alpha_b.view(batch_size, -1)  # (batch_size, k * 2)
 
-    alpha_h = torch.nn.functional.softmax(alpha_h)
-    alpha_d = torch.nn.functional.softmax(alpha_d)
-    alpha_b = torch.nn.functional.sigmoid(alpha_b)
+      alpha_h = torch.nn.functional.softmax(alpha_h)
+      alpha_d = torch.nn.functional.softmax(alpha_d)
+      alpha_b = torch.nn.functional.sigmoid(alpha_b)
 
     if torch.sum(alpha_h).data[0] != torch.sum(alpha_h).data[0]:
       pdb.set_trace()
@@ -387,3 +422,20 @@ class StackLSTMParser(nn.Module):
       else:
         logging.fatal("Unimplemented transition system.")
         raise NotImplementedError
+
+
+  def set_hard_composition_mappings(self):
+    for idx, astr in enumerate(self.actions):
+      transition = astr.split('|')[0]
+
+      # If the action is unknown, read/write attention weights should all be 0
+      if self.transSys == TransitionSystems.AER:
+        self.composition_attn_h[idx], self.composition_attn_d[idx], self.composition_attn_b[idx] = \
+          AER_hard_composition_map.get(transition, ([0] * self.composition_k * 2, [0] * self.composition_k * 2, [0] * self.composition_k * 2))
+      if self.transSys == TransitionSystems.AH:
+        self.composition_attn_h[idx], self.composition_attn_d[idx], self.composition_attn_b[idx] = \
+          AH_hard_composition_map.get(transition, ([0] * self.composition_k * 2, [0] * self.composition_k * 2, [0] * self.composition_k * 2))
+      else:
+        logging.fatal("Unimplemented transition system.")
+        raise NotImplementedError
+
