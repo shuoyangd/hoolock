@@ -267,11 +267,12 @@ def main(options):
     logging.info("Dev loss: {0}".format(dev_loss))
 
     logging.info("Saving model...")
-    # torch.save(parser, open(options.model_file + ".nll_{0:.2f}.epoch_{1}".format(dev_loss, epoch_i), 'wb'),
-    #            pickle_module=dill)
+    torch.save(parser, open(options.model_file + ".nll_{0:.2f}.epoch_{1}".format(dev_loss, epoch_i), 'wb'),
+               pickle_module=dill)
     logging.info("Done.")
 
     scheduler.step(dev_loss)
+    logging.info("Current learning rate {0}".format(optimizer.param_groups[0]['lr']))
 
 if __name__ == "__main__":
   ret = opt_parser.parse_known_args()
