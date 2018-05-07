@@ -3,8 +3,6 @@ import torch
 from torch import nn
 from torch.autograd import Variable
 
-import pdb
-
 class StackLSTMCell(nn.Module):
 
   def __init__(self, input_size, hidden_size, dropout_rate, stack_size, num_layers=1,

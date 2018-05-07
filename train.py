@@ -5,6 +5,7 @@ import utils.rand
 import torch
 from torch import cuda
 from torch.autograd import Variable
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 import argparse
 import dill
@@ -83,6 +84,8 @@ opt_parser.add_argument("--grad_clip", default=-1.0, type=float,
                         help="Gradient clipping bound. Pass any negative number to disable this functionality. (default=-1.0)")
 opt_parser.add_argument("--l2_norm", default=1e-6, type=float,
                         help="L2 norm coefficient to the loss function. (default=1e-6)")
+opt_parser.add_argument("--lr_decay", default=0.5, type=float,
+                        help="Decay factor of the learning rate when validation loss stop decreasing. (default=0.5)")
 
 def main(options):
 
@@ -127,6 +130,7 @@ def main(options):
   # loss = model.Loss.NLLLoss(options.gpuid)
   loss = torch.nn.NLLLoss()
   optimizer = eval("torch.optim." + options.optimizer)(filter(lambda param: param.requires_grad, parser.parameters()), options.learning_rate, weight_decay=options.l2_norm)
+  scheduler = ReduceLROnPlateau(optimizer, 'min', options.lr_decay, patience=0)
 
 
   def replace_singletons(batch, singletons, unk_idx):
@@ -260,12 +264,14 @@ def main(options):
 
     logging.info("End of {0} epoch: ".format(epoch_i))
     # logging.info("Training loss: {0}".format(loss_output.data[0]))
-    logging.info("Dev loss: {0}".format(dev_loss / i))
+    logging.info("Dev loss: {0}".format(dev_loss))
 
     logging.info("Saving model...")
-    torch.save(parser, open(options.model_file + ".nll_{0:.2f}.epoch_{1}".format(dev_loss, epoch_i), 'wb'),
-               pickle_module=dill)
+    # torch.save(parser, open(options.model_file + ".nll_{0:.2f}.epoch_{1}".format(dev_loss, epoch_i), 'wb'),
+    #            pickle_module=dill)
     logging.info("Done.")
+
+    scheduler.step(dev_loss)
 
 if __name__ == "__main__":
   ret = opt_parser.parse_known_args()
