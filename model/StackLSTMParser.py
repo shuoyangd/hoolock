@@ -115,7 +115,7 @@ class StackLSTMParser(nn.Module):
     self.token_stack = StateStack(options.input_dim)
     self.token_buffer = StateStack(options.input_dim) # elememtns in this buffer has size input_dim so h0 and c0 won't fit
     self.pre_buffer = MultiLayerLSTMCell(input_size=options.input_dim, hidden_size=options.hid_dim, num_layers=options.num_lstm_layers) # FIXME: dropout needs to be implemented manually
-    self.history = nn.LSTMCell(input_size=options.action_emb_dim, hidden_size=options.hid_dim) # FIXME: dropout needs to be implemented manually
+    self.history = MultiLayerLSTMCell(input_size=options.action_emb_dim, hidden_size=options.hid_dim, num_layers=options.num_lstm_layers) # FIXME: dropout needs to be implemented manually
 
     # parser state and softmax
     self.use_token_highway = options.use_token_highway
@@ -234,8 +234,8 @@ class StackLSTMParser(nn.Module):
     token_stack_state = self.token_stack.head()
     token_buffer_state = self.token_buffer.head()
     stack_input =  token_buffer_state # (batch_size, input_size)
-    action_state = self.h0.unsqueeze(0).expand(batch_size, self.hid_dim) # (batch_size, hid_dim)
-    action_cell = self.c0.unsqueeze(0).expand(batch_size, self.hid_dim) # (batch_size, hid_dim)
+    action_state = self.h0.unsqueeze(0).unsqueeze(2).expand(batch_size, self.hid_dim, self.num_lstm_layers) # (batch_size, hid_dim, num_lstm_layers)
+    action_cell = self.c0.unsqueeze(0).unsqueeze(2).expand(batch_size, self.hid_dim, self.num_lstm_layers) # (batch_size, hid_dim, num_lstm_layers)
 
     # prepare bernoulli probability for exposure indicator
     batch_exposure_prob = Variable(torch.Tensor([self.exposure_eps] * batch_size).type(self.dtype))
@@ -253,9 +253,9 @@ class StackLSTMParser(nn.Module):
     while step_i < step_length:
       # get action decisions
       if self.use_token_highway:
-        summary = self.summarize_states(torch.cat((stack_state, token_stack_state, buffer_state, token_buffer_state, action_state), dim=1))
+        summary = self.summarize_states(torch.cat((stack_state, token_stack_state, buffer_state, token_buffer_state, action_state[:, :, -1]), dim=1))
       else:
-        summary = self.summarize_states(torch.cat((stack_state, buffer_state, action_state), dim=1)) # (batch_size, self.state_dim)
+        summary = self.summarize_states(torch.cat((stack_state, buffer_state, action_state[:, :, -1]), dim=1)) # (batch_size, self.state_dim)
       action_dist = self.softmax(self.state_to_actions(summary)) # (batch_size, len(actions))
       outputs[step_i, :, :] = action_dist.clone()
 
@@ -303,8 +303,8 @@ class StackLSTMParser(nn.Module):
       token_stack_state = self.token_stack(stack_input, stack_op)
       token_buffer_state = self.token_buffer(stack_input, buffer_op)
       stack_input = self.token_buffer.head()
-      action_input = self.action_emb(action_i) # (batch_size, hid_dim)
-      action_state, action_cell = self.history(action_input, (action_state, action_cell))
+      action_input = self.action_emb(action_i) # (batch_size, action_emb_dim)
+      action_state, action_cell = self.history(action_input, (action_state, action_cell)) # (batch_size, hid_dim, num_lstm_layers)
 
       step_i += 1
 

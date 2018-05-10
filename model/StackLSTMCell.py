@@ -67,6 +67,19 @@ class StackLSTMCell(nn.Module):
     :param op: (batch_size,), stack operations, in batch (-1 means pop, 1 means push, 0 means hold).
     :return: (hidden, cell): both are (batch_size, hidden_dim)
     """
+
+    """
+    batch_size = input.size(0)
+    batch_indexes = torch.arange(0, batch_size).type(self.long_dtype)
+    cur_hidden, cur_cell = self.hidden_stack[self.pos.data, batch_indexes, :, :].clone(), \
+                           self.cell_stack[self.pos.data, batch_indexes, :, :].clone()
+    next_hidden, next_cell = self.lstm(input, (cur_hidden, cur_cell))
+    self.pos += op
+    self.hidden_stack[self.pos.data, batch_indexes, :, :] = next_hidden.clone()
+    self.cell_stack[self.pos.data, batch_indexes, :, :] = next_cell.clone()
+    return next_hidden[:, :, -1].clone(), next_cell[:, :, -1].clone()
+    """
+
     batch_size = input.size(0)
     push_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == 1).data]
     pop_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == -1).data]
@@ -108,6 +121,7 @@ class StackLSTMCell(nn.Module):
     self.pos += op
 
     return hidden_ret, cell_ret
+
 
   def init_hidden(self, init_var=None):
     if init_var is None:

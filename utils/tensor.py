@@ -3,7 +3,6 @@ import pdb
 import torch
 from torch.autograd import Variable
 
-
 ### batch-related stuff ###
 
 def truncate_or_pad(tensor, dim, length, pad_index=0):

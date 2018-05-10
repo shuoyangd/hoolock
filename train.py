@@ -5,7 +5,7 @@ import utils.rand
 import torch
 from torch import cuda
 from torch.autograd import Variable
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import LambdaLR, StepLR, ReduceLROnPlateau
 
 import argparse
 import dill
@@ -18,7 +18,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S', level=logging.DEBUG)
 
 opt_parser =\
-  argparse.ArgumentParser(description="Reimplementation of\n" +
+  argparse.ArgumentParser(description="A GPU-friendly Reimplementation of\n" +
                                       "Dyer et al. 2015\n" +
                                       "Transition-Based Dependency Parsing with Stack Long Short-Term Memory.\n" +
                                       "This is the training code.")
@@ -84,8 +84,10 @@ opt_parser.add_argument("--grad_clip", default=-1.0, type=float,
                         help="Gradient clipping bound. Pass any negative number to disable this functionality. (default=-1.0)")
 opt_parser.add_argument("--l2_norm", default=1e-6, type=float,
                         help="L2 norm coefficient to the loss function. (default=1e-6)")
-opt_parser.add_argument("--lr_decay", default=0.5, type=float,
-                        help="Decay factor of the learning rate when validation loss stop decreasing. (default=0.5)")
+opt_parser.add_argument("--lr_decay", default="Dyer",
+                        help="Learning rate decay scheduler: Dyer|ExponentialLR|ReduceLROnPLateau|None. Dyer means the scheduler used in (Dyer et al. 2015). (default=Dyer)")
+opt_parser.add_argument("--lr_decay_factor", default=0.1, type=float,
+                        help="Decay factor of the learning rate. (default=0.1)")
 
 def main(options):
 
@@ -111,6 +113,7 @@ def main(options):
   batchized_train_action, batchized_train_action_mask = utils.tensor.advanced_batchize_no_sort(train_action, options.batch_size, actions.index("<pad>"), sort_index)
   if use_pretrained_emb:
     batchized_train_data_pre, _ = utils.tensor.advanced_batchize_no_sort(train_data_pre, options.batch_size, pre_vocab.stoi["<pad>"], sort_index)
+  train_sort_index = sort_index  # FIXME: debug
 
   batchized_dev_data, batchized_dev_data_mask, sort_index = utils.tensor.advanced_batchize(dev_data, options.dev_batch_size, vocab.stoi["<pad>"])
   batchized_dev_postag, _, _ = utils.tensor.advanced_batchize(dev_postag, options.dev_batch_size, postags.index("<pad>"))
@@ -130,7 +133,12 @@ def main(options):
   # loss = model.Loss.NLLLoss(options.gpuid)
   loss = torch.nn.NLLLoss()
   optimizer = eval("torch.optim." + options.optimizer)(filter(lambda param: param.requires_grad, parser.parameters()), options.learning_rate, weight_decay=options.l2_norm)
-  scheduler = ReduceLROnPlateau(optimizer, 'min', options.lr_decay, patience=0)
+  if options.lr_decay == "None":
+    scheduler = None
+  elif options.lr_decay == "Dyer":
+    scheduler = LambdaLR(optimizer, lambda t: options.learning_rate / (1 + options.lr_decay_factor * t))
+  else:
+    scheduler = eval(options.lr_decay)(optimizer, 'min', options.lr_decay_factor, patience=0)
 
 
   def replace_singletons(batch, singletons, unk_idx):
@@ -271,8 +279,9 @@ def main(options):
                pickle_module=dill)
     logging.info("Done.")
 
-    scheduler.step(dev_loss)
-    logging.info("Current learning rate {0}".format(optimizer.param_groups[0]['lr']))
+    if scheduler:
+      scheduler.step(dev_loss)
+      logging.info("Current learning rate {0}".format(optimizer.param_groups[0]['lr']))
 
 if __name__ == "__main__":
   ret = opt_parser.parse_known_args()
