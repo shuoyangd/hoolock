@@ -299,8 +299,11 @@ def main(options):
                pickle_module=dill)
     logging.info("Done.")
 
-    if scheduler:
+    if type(scheduler) == ReduceLROnPlateau:
       scheduler.step(dev_loss)
+      logging.info("Current learning rate {0}".format(optimizer.param_groups[0]['lr']))
+    elif scheduler:
+      scheduler.step()
       logging.info("Current learning rate {0}".format(optimizer.param_groups[0]['lr']))
 
 if __name__ == "__main__":
