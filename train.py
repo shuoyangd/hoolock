@@ -181,6 +181,7 @@ def main(options):
   # main training loop
   for epoch_i in range(options.epochs):
 
+    dev_loss = float('inf')
     logging.info("At {0} epoch.".format(epoch_i))
     if type(scheduler) == ReduceLROnPlateau:
       scheduler.step(dev_loss)
