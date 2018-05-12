@@ -153,7 +153,7 @@ def main(options):
   if options.lr_decay == "None":
     scheduler = None
   elif options.lr_decay == "Dyer":
-    scheduler = LambdaLR(optimizer, lambda t: options.learning_rate / (1 + options.lr_decay_factor * t))
+    scheduler = LambdaLR(optimizer, lambda t: 1.0 / (1 + options.lr_decay_factor * t))
   else:
     scheduler = eval(options.lr_decay)(optimizer, 'min', options.lr_decay_factor, patience=0)
 
@@ -180,7 +180,15 @@ def main(options):
 
   # main training loop
   for epoch_i in range(options.epochs):
+
     logging.info("At {0} epoch.".format(epoch_i))
+    if type(scheduler) == ReduceLROnPlateau:
+      scheduler.step(dev_loss)
+      logging.info("Current learning rate {0}".format(optimizer.param_groups[0]['lr']))
+    elif scheduler:
+      scheduler.step()
+      logging.info("Current learning rate {0}".format(optimizer.param_groups[0]['lr']))
+
     for i, batch_i in enumerate(utils.rand.srange(len(batchized_train_data))):
     # for i, batch_i in enumerate(range(len(batchized_train_data))):
       logging.debug("{0} batch updates calculated, with batch {1}.".format(i, batch_i))
@@ -299,12 +307,6 @@ def main(options):
                pickle_module=dill)
     logging.info("Done.")
 
-    if type(scheduler) == ReduceLROnPlateau:
-      scheduler.step(dev_loss)
-      logging.info("Current learning rate {0}".format(optimizer.param_groups[0]['lr']))
-    elif scheduler:
-      scheduler.step()
-      logging.info("Current learning rate {0}".format(optimizer.param_groups[0]['lr']))
 
 if __name__ == "__main__":
   ret = opt_parser.parse_known_args()

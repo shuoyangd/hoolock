@@ -22,8 +22,8 @@ class MultiLayerLSTMCell(nn.Module):
     """
 
     dtype = torch.cuda.FloatTensor if next(self.lstm.parameters()).is_cuda else torch.FloatTensor
-    next_hidden = Variable(torch.zeros(prev[0].size()).type(dtype))
-    next_cell = Variable(torch.zeros(prev[1].size()).type(dtype))
+    next_hidden = []
+    next_cell = []
 
     for i in range(self.num_layers):
       prev_hidden_i = prev[0][:, :, i]
@@ -32,8 +32,11 @@ class MultiLayerLSTMCell(nn.Module):
         next_hidden_i, next_cell_i = self.lstm[i](input, (prev_hidden_i, prev_cell_i))
       else:
         next_hidden_i, next_cell_i = self.lstm[i](input_im1, (prev_hidden_i, prev_cell_i))
-      next_hidden[:, :, i] = next_hidden_i
-      next_cell[:, :, i] = next_cell_i
+      next_hidden += [next_hidden_i]
+      next_cell += [next_cell_i]
       input_im1 = next_hidden_i
+
+    next_hidden = torch.stack(next_hidden).permute(1, 2, 0)
+    next_cell = torch.stack(next_cell).permute(1, 2, 0)
 
     return next_hidden, next_cell
