@@ -107,6 +107,23 @@ def main(options):
   else:
     pre_vocab = None
 
+  # create labeled to unlabeled action maps so we can report results without labels
+  la2ua = {}
+  u_actions = []
+  for la_idx, action in enumerate(actions):
+    if '|' in action:
+      u_action = action.split('|')[0]
+    else:
+      u_action = action
+
+    if u_action in u_actions:
+      ua_idx = u_actions.index(u_action)
+      la2ua[la_idx]= ua_idx
+    else:
+      ua_idx = len(u_actions)
+      u_actions.append(u_action)
+      la2ua[la_idx] = ua_idx
+
   # (num_batched_instances, seq_len, batch_size)
   batchized_train_data, batchized_train_data_mask, sort_index = utils.tensor.advanced_batchize(train_data, options.batch_size, vocab.stoi["<pad>"])
   batchized_train_postag, _, _ = utils.tensor.advanced_batchize(train_postag, options.batch_size, postags.index("<pad>"))
@@ -211,7 +228,10 @@ def main(options):
 
       logging.debug(loss_output.data[0])
       _, pred = output_batch.max(dim=1)
-      hit = sum(map(lambda x: 1 if x[0] == x[1] else 0, zip(pred.data.tolist(), train_action_batch.data.tolist())))
+
+      u_pred = map(lambda x: la2ua[x], pred.data.tolist())
+      u_train_action_batch = map(lambda x: la2ua[x], train_action_batch.data.tolist())
+      hit = sum(map(lambda x: 1 if x[0] == x[1] else 0, zip(u_pred, u_train_action_batch)))
       logging.debug("pred accuracy: {0}".format(hit / len(output_batch)))
       # train_action_batch = train_action_batch_archiv
       # logging.debug("pred: {0}".format(pred))
