@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-from torch.autograd import Variable
 
 import pdb
 
@@ -21,7 +20,6 @@ class MultiLayerLSTMCell(nn.Module):
     :param prev: tuple of (h0, c0), each has size (batch, hidden_size, num_layers)
     """
 
-    dtype = torch.cuda.FloatTensor if next(self.lstm.parameters()).is_cuda else torch.FloatTensor
     next_hidden = []
     next_cell = []
 

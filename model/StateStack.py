@@ -63,6 +63,15 @@ class StateStack(nn.Module):
     :param op: (batch_size,), stack operations, in batch (-1 means pop, 1 means push, 0 means hold).
     :return: (hidden, cell): both are (batch_size, hidden_dim)
     """
+
+    batch_size = input.size(0)
+    batch_indexes = torch.arange(0, batch_size).type(self.long_dtype)
+    self.hidden_stack[(self.pos + 1).data, batch_indexes, :] = input.clone()
+    self.pos += op
+    hidden_ret = self.hidden_stack[self.pos.data, batch_indexes, :]
+    return hidden_ret
+
+    """
     batch_size = input.size(0)
     push_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == 1).data]
     pop_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == -1).data]
@@ -105,6 +114,7 @@ class StateStack(nn.Module):
 
     # return hidden_ret, cell_ret
     return hidden_ret
+    """
 
   """
   def forward(self, input, op):
