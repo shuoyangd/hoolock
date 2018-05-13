@@ -75,7 +75,7 @@ class StackLSTMCell(nn.Module):
     next_hidden, next_cell = self.lstm(input, (cur_hidden, cur_cell))
     self.hidden_stack[(self.pos + 1).data, batch_indexes, :, :] = next_hidden.clone()
     self.cell_stack[(self.pos + 1).data, batch_indexes, :, :] = next_cell.clone()
-    self.pos += op
+    self.pos = self.pos + op  # XXX: should NOT use in-place assignment!
     
     hidden_ret = self.hidden_stack[self.pos.data, batch_indexes, :, :]
     cell_ret = self.hidden_stack[self.pos.data, batch_indexes, :, :]
@@ -120,7 +120,8 @@ class StackLSTMCell(nn.Module):
 
     # position overflow/underflow protection should not be done here,
     # they may not be desirable depending on the application
-    self.pos += op
+    # self.pos += op
+    self.pos = self.pos + op
 
     return hidden_ret, cell_ret
     """
@@ -289,6 +290,6 @@ if __name__ == "__main__":
       correct_pop += torch.sum((op == -1).data & (gold == argmax).data)
 
     print("prediction accuracy: {0} / {1} = {2}\namong which:".format(correct, total, correct / total))
-    print("correct push: {0} / {1} = {2}".format(correct_push, total_push, correct_push / total_push))
-    print("correct hold: {0} / {1} = {2}".format(correct_hold, total_hold, correct_hold / total_hold))
-    print("correct pop: {0} / {1} = {2}".format(correct_pop, total_pop, correct_pop / total_pop))
+    print("correct push: {0} / {1} = {2}".format(correct_push, total_push, 0 if total_push == 0 else correct_push / total_push))
+    print("correct hold: {0} / {1} = {2}".format(correct_hold, total_hold, 0 if total_hold == 0 else correct_hold / total_hold))
+    print("correct pop: {0} / {1} = {2}".format(correct_pop, total_pop, 0 if total_pop == 0 else correct_pop / total_pop))

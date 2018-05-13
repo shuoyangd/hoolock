@@ -67,7 +67,7 @@ class StateStack(nn.Module):
     batch_size = input.size(0)
     batch_indexes = torch.arange(0, batch_size).type(self.long_dtype)
     self.hidden_stack[(self.pos + 1).data, batch_indexes, :] = input.clone()
-    self.pos += op
+    self.pos = self.pos + op  # XXX: should NOT use in-place assignment!
     hidden_ret = self.hidden_stack[self.pos.data, batch_indexes, :]
     return hidden_ret
 
@@ -110,7 +110,8 @@ class StateStack(nn.Module):
 
     # position overflow/underflow protection should not be done here,
     # they may not be desirable depending on the application
-    self.pos += op
+    # self.pos += op
+    self.pos = self.pos + op  # XXX: should NOT use in-place assignment!
 
     # return hidden_ret, cell_ret
     return hidden_ret
