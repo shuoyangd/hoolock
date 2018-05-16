@@ -231,8 +231,10 @@ def main(options):
       for param in parser.parameters():
         if param.norm().data[0] > 1e3:
           logging.debug("big parameter value with shape {0}".format(param.size()))
-        if param.grad.norm().data[0] > 1e3:
+        if param.grad and param.grad.norm().data[0] > 1e3:
           logging.debug("big grad value with shape {0}".format(param.size()))
+        elif not param.grad:
+          loggin.debug("a parameter with shape {0} does not have gradient".format(param.size()))
         if param.norm().data[0] != param.norm().data[0]:
           logging.debug("inf value with shape {0}".format(param.size()))
 
