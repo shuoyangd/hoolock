@@ -145,6 +145,10 @@ def main(options):
   else:
     parser.cpu()
 
+  for param in parser.parameters():
+    if len(param.size()) > 1:
+      torch.nn.init.xavier_uniform(param)
+
   # prepare optimizer and loss
   # loss = torch.nn.CrossEntropyLoss()
   # loss = model.Loss.NLLLoss(options.gpuid)
@@ -191,7 +195,7 @@ def main(options):
       logging.info("Current learning rate {0}".format(optimizer.param_groups[0]['lr']))
 
     for i, batch_i in enumerate(utils.rand.srange(len(batchized_train_data))):
-    # for i, batch_i in enumerate(range(len(batchized_train_data))):
+    # for i, batch_i in enumerate(range(len(batchized_train_data) - 1, 0, -1)):
       logging.debug("{0} batch updates calculated, with batch {1}.".format(i, batch_i))
       train_data_batch = replace_singletons(batchized_train_data[batch_i], singletons, vocab.stoi["<unk>"])
       train_data_batch = Variable(train_data_batch) # (seq_len, batch_size) with dynamic seq_len
@@ -223,6 +227,15 @@ def main(options):
 
       optimizer.zero_grad()
       loss_output.backward()
+
+      for param in parser.parameters():
+        if param.norm().data[0] > 1e3:
+          logging.debug("big parameter value with shape {0}".format(param.size()))
+        if param.grad.norm().data[0] > 1e3:
+          logging.debug("big grad value with shape {0}".format(param.size()))
+        if param.norm().data[0] != param.norm().data[0]:
+          logging.debug("inf value with shape {0}".format(param.size()))
+
       if options.grad_clip > 0.0:
         torch.nn.utils.clip_grad_norm(parser.parameters(), options.grad_clip)
       optimizer.step()
