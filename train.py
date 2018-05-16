@@ -234,7 +234,7 @@ def main(options):
         if param.grad is not None and param.grad.norm().data[0] > 1e3:
           logging.debug("big grad value with shape {0}".format(param.size()))
         elif param.grad is None:
-          loggin.debug("a parameter with shape {0} does not have gradient".format(param.size()))
+          logging.debug("a parameter with shape {0} does not have gradient".format(param.size()))
         if param.norm().data[0] != param.norm().data[0]:
           logging.debug("inf value with shape {0}".format(param.size()))
 
