@@ -328,6 +328,10 @@ class StackLSTMParser(nn.Module):
     for kk in range(k):
       stack_pos[kk] -= kk
       buffer_pos[kk] -= kk
+    stack_pos_mask = (stack_pos < 0)  # (k, batch_size)
+    buffer_pos_mask = (buffer_pos < 0)  # (k, batch_size)
+    pos_mask = torch.cat((stack_pos_mask, buffer_pos_mask), dim=0).t()  # (batch_size, k * 2)
+
     stack_pos[(stack_pos < 0)] = 0
     buffer_pos[(buffer_pos < 0)] = 0
     active_token_emb[:, 0:k, :] = \
@@ -352,6 +356,11 @@ class StackLSTMParser(nn.Module):
       alpha_h = torch.nn.functional.softmax(alpha_h)
       alpha_d = torch.nn.functional.softmax(alpha_d)
       alpha_b = torch.nn.functional.sigmoid(alpha_b)
+
+    # the masked positions should not be considered as valid
+    alpha_h[pos_mask] = 0
+    alpha_d[pos_mask] = 0
+    alpha_b[pos_mask] = 0
 
     if torch.sum(alpha_h).data[0] != torch.sum(alpha_h).data[0]:
       pdb.set_trace()
