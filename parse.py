@@ -68,9 +68,9 @@ def main(options):
   parser.stack_size = options.stack_size
   parser.gpuid = options.gpuid
   if use_cuda:
-    parser.cuda()
+    parser = parser.cuda()
   else:
-    parser.cpu()
+    parser = parser.cpu()
     parser.dtype = torch.FloatTensor
     parser.long_dtype = torch.LongTensor
 
@@ -87,11 +87,11 @@ def main(options):
     else:
       test_data_pre_batch = None
     if use_cuda:
-      test_data_batch.cuda()
-      test_data_mask_batch.cuda()
-      test_postag_batch.cuda()
+      test_data_batch = test_data_batch.cuda()
+      test_data_mask_batch = test_data_mask_batch.cuda()
+      test_postag_batch = test_postag_batch.cuda()
       if use_pretrained_emb:
-        test_data_pre_batch.cuda()
+        test_data_pre_batch = test_data_pre_batch.cuda()
 
     output_batch = parser(test_data_batch, test_data_mask_batch,  pre_tokens=test_data_pre_batch, postags=test_postag_batch) # (max_seq_len, batch_size, len(actions))
     _, output_actions = output_batch.max(dim=2) # (max_seq_len, batch_size)
