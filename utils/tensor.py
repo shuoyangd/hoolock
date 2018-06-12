@@ -1,7 +1,7 @@
 import math
 import pdb
 import torch
-from torch.autograd import Variable
+# from torch.autograd import Variable
 
 ### batch-related stuff ###
 
@@ -131,11 +131,8 @@ def batchize(tensor, batch_size, pad_index):
 ### revert ###
 
 def revert(tensor, dim):
-  if type(tensor) == torch.autograd.Variable:
-    dtype = type(tensor.data)
-  else:
-    dtype = type(tensor)
-  rev_idx = Variable(torch.arange(tensor.size(dim) - 1, -1, -1).type(dtype).long())
+  dtype = type(tensor)
+  rev_idx = torch.arange(tensor.size(dim) - 1, -1, -1).type(dtype).long()
   tensor = tensor.index_select(dim, rev_idx)
   return tensor
 

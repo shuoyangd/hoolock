@@ -2,7 +2,7 @@ from preprocess import conll_indice_mapping_without_padding
 
 import torch
 from torch import cuda
-from torch.autograd import Variable
+# from torch.autograd import Variable
 import utils
 
 import argparse
@@ -79,11 +79,11 @@ def main(options):
   writer = utils.io.OracleWriter(open(options.output_file, 'w'), actions, pad_idx, total_sent_n)
   for batch_i in range(len(batchized_test_data)):
     logging.debug("{0} batch updates calculated.".format(batch_i))
-    test_data_batch = Variable(batchized_test_data[batch_i], volatile=True)
-    test_data_mask_batch = Variable(batchized_test_data_mask[batch_i], volatile=True)
-    test_postag_batch = Variable(batchized_test_postag[batch_i], volatile=True)
+    test_data_batch = batchized_test_data[batch_i]
+    test_data_mask_batch = batchized_test_data_mask[batch_i]
+    test_postag_batch = batchized_test_postag[batch_i]
     if use_pretrained_emb:
-      test_data_pre_batch = Variable(batchized_test_data_pre[batch_i], volatile=True)
+      test_data_pre_batch = batchized_test_data_pre[batch_i]
     else:
       test_data_pre_batch = None
     if use_cuda:

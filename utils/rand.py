@@ -1,5 +1,9 @@
 from random import randint
 
+import torch
+from torch.autograd import Variable
+import torch.nn.functional as F
+
 lfsr_roots = [
   [2, 1],
   [3, 2],
@@ -92,6 +96,24 @@ def srange(start, stop=None, step=1):
     lfsr = (lfsr >> 1) | (bit << (nbits - 1))
     if lfsr == seed:
       break
+
+# copied from https://discuss.pytorch.org/t/stop-gradients-for-st-gumbel-softmax/530
+# credit goes to eliabruni
+def sample_gumbel(input):
+    noise = torch.rand(input.size())
+    eps = 1e-20
+    noise.add_(eps).log_().neg_()
+    noise.add_(eps).log_().neg_()
+    return Variable(noise).type_as(input)
+
+# copied from https://discuss.pytorch.org/t/stop-gradients-for-st-gumbel-softmax/530
+# credit goes to eliabruni
+def gumbel_softmax_sample(input):
+    temperature = 1
+    noise = sample_gumbel(input)
+    x = (input + noise) / temperature
+    x = F.log_softmax(x, dim=len(x.size())-1)
+    return x.view_as(input)
 
 if __name__ == "__main__":
   for idx, num in enumerate(srange(15)):

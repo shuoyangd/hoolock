@@ -4,7 +4,7 @@ import utils.rand
 
 import torch
 from torch import cuda
-from torch.autograd import Variable
+# from torch.autograd import Variable
 from torch.optim.lr_scheduler import LambdaLR, StepLR, ReduceLROnPlateau
 
 import argparse
@@ -69,6 +69,8 @@ opt_parser.add_argument("--hard_composition", default=False, action='store_true'
                         help="Use the hacky hard composition that tries to approximate Dyer et al. 2015. (default=False)")
 opt_parser.add_argument("--composition_k", default=0, type=int,
                         help="k-value for composition on the token embeddings. 0 means no composition would happen. (default=0)")
+opt_parser.add_argument("--st_gumbel_softmax", "-stgs", default=False, action='store_true',
+                        help="Use ST Gumbel-Softmax loss instead of normal softmax. (default=False)")
 
 
 # optimizer
@@ -130,7 +132,6 @@ def main(options):
   batchized_train_action, batchized_train_action_mask = utils.tensor.advanced_batchize_no_sort(train_action, options.batch_size, actions.index("<pad>"), sort_index)
   if use_pretrained_emb:
     batchized_train_data_pre, _ = utils.tensor.advanced_batchize_no_sort(train_data_pre, options.batch_size, pre_vocab.stoi["<pad>"], sort_index)
-  train_sort_index = sort_index  # FIXME: debug
 
   batchized_dev_data, batchized_dev_data_mask, sort_index = utils.tensor.advanced_batchize(dev_data, options.dev_batch_size, vocab.stoi["<pad>"])
   batchized_dev_postag, _, _ = utils.tensor.advanced_batchize(dev_postag, options.dev_batch_size, postags.index("<pad>"))
@@ -147,7 +148,7 @@ def main(options):
 
   for param in parser.parameters():
     if len(param.size()) > 1:
-      torch.nn.init.xavier_uniform(param)
+      torch.nn.init.xavier_uniform_(param)
 
   # prepare optimizer and loss
   # loss = torch.nn.CrossEntropyLoss()
@@ -187,10 +188,7 @@ def main(options):
 
     dev_loss = float('inf')
     logging.info("At {0} epoch.".format(epoch_i))
-    if type(scheduler) == ReduceLROnPlateau:
-      scheduler.step(dev_loss)
-      logging.info("Current learning rate {0}".format(optimizer.param_groups[0]['lr']))
-    elif scheduler:
+    if type(scheduler) != ReduceLROnPlateau:
       scheduler.step()
       logging.info("Current learning rate {0}".format(optimizer.param_groups[0]['lr']))
 
@@ -198,15 +196,16 @@ def main(options):
     # for i, batch_i in enumerate(range(len(batchized_train_data) - 1, 0, -1)):
       logging.debug("{0} batch updates calculated, with batch {1}.".format(i, batch_i))
       train_data_batch = replace_singletons(batchized_train_data[batch_i], singletons, vocab.stoi["<unk>"])
-      train_data_batch = Variable(train_data_batch) # (seq_len, batch_size) with dynamic seq_len
-      train_data_mask_batch = Variable(batchized_train_data_mask[batch_i]) # (seq_len, batch_size) with dynamic seq_len
-      train_postag_batch = Variable(batchized_train_postag[batch_i]) # (seq_len, batch_size) with dynamic seq_len
-      train_action_batch = Variable(batchized_train_action[batch_i]) # (seq_len, batch_size) with dynamic seq_len
-      train_action_mask_batch = Variable(batchized_train_action_mask[batch_i]) # (seq_len, batch_size) with dynamic seq_len
+      train_data_mask_batch = batchized_train_data_mask[batch_i] # (seq_len, batch_size) with dynamic seq_len
+      train_postag_batch = batchized_train_postag[batch_i] # (seq_len, batch_size) with dynamic seq_len
+      train_action_batch = batchized_train_action[batch_i] # (seq_len, batch_size) with dynamic seq_len
+      train_action_mask_batch = batchized_train_action_mask[batch_i] # (seq_len, batch_size) with dynamic seq_len
+
       if use_pretrained_emb:
-        train_data_pre_batch = Variable(batchized_train_data_pre[batch_i])
+        train_data_pre_batch = batchized_train_data_pre[batch_i]
       else:
         train_data_pre_batch = None
+
       if use_cuda:
         train_data_batch = train_data_batch.cuda()
         train_data_mask_batch = train_data_mask_batch.cuda()
@@ -228,6 +227,7 @@ def main(options):
       optimizer.zero_grad()
       loss_output.backward()
 
+      """
       for param in parser.parameters():
         if param.norm().data[0] > 1e3:
           logging.debug("big parameter value with shape {0}".format(param.size()))
@@ -237,6 +237,7 @@ def main(options):
           logging.debug("a parameter with shape {0} does not have gradient".format(param.size()))
         if param.norm().data[0] != param.norm().data[0]:
           logging.debug("inf value with shape {0}".format(param.size()))
+      """
 
       if options.grad_clip > 0.0:
         torch.nn.utils.clip_grad_norm(parser.parameters(), options.grad_clip)
@@ -250,11 +251,11 @@ def main(options):
       post_loss_output = loss(post_output_batch, train_action_batch)
       """
 
-      logging.debug(loss_output.data[0])
+      logging.debug(loss_output[0].item())
       _, pred = output_batch.max(dim=1)
 
-      u_pred = map(lambda x: la2ua[x], pred.data.tolist())
-      u_train_action_batch = map(lambda x: la2ua[x], train_action_batch.data.tolist())
+      u_pred = map(lambda x: la2ua[x], pred.tolist())
+      u_train_action_batch = map(lambda x: la2ua[x], train_action_batch.tolist())
       hit = sum(map(lambda x: 1 if x[0] == x[1] else 0, zip(u_pred, u_train_action_batch)))
       logging.debug("pred accuracy: {0}".format(hit / len(output_batch)))
       # train_action_batch = train_action_batch_archiv
@@ -279,15 +280,17 @@ def main(options):
     dev_loss = 0.0
     for i, batch_i in enumerate(range(len(batchized_dev_data))):
       logging.debug("{0} dev batch calculated.".format(i))
-      dev_data_batch = Variable(batchized_dev_data[batch_i], volatile=True) # (seq_len, dev_batch_size) with dynamic seq_len
-      dev_data_mask_batch = Variable(batchized_dev_data_mask[batch_i], volatile=True) # (seq_len, dev_batch_size) with dynamic seq_len
-      dev_postag_batch = Variable(batchized_dev_postag[batch_i], volatile=True) # (seq_len, dev_batch_size) with dynamic seq_len
-      dev_action_batch = Variable(batchized_dev_action[batch_i], volatile=True) # (seq_len, dev_batch_size) with dynamic seq_len
-      dev_action_mask_batch = Variable(batchized_dev_action_mask[batch_i], volatile=True) # (seq_len, dev_batch_size) with dynamic seq_len
+
+      dev_data_batch = batchized_dev_data[batch_i] # (seq_len, dev_batch_size) with dynamic seq_len
+      dev_data_mask_batch = batchized_dev_data_mask[batch_i] # (seq_len, dev_batch_size) with dynamic seq_len
+      dev_postag_batch = batchized_dev_postag[batch_i] # (seq_len, dev_batch_size) with dynamic seq_len
+      dev_action_batch = batchized_dev_action[batch_i] # (seq_len, dev_batch_size) with dynamic seq_len
+      dev_action_mask_batch = batchized_dev_action_mask[batch_i] # (seq_len, dev_batch_size) with dynamic seq_len
       if use_pretrained_emb:
-        dev_data_pre_batch = Variable(batchized_dev_data_pre[batch_i], volatile=True)
+        dev_data_pre_batch = batchized_dev_data_pre[batch_i]
       else:
         dev_data_pre_batch = None
+
       if use_cuda:
         dev_data_batch = dev_data_batch.cuda()
         dev_data_mask_batch = dev_data_mask_batch.cuda()
@@ -304,24 +307,28 @@ def main(options):
       output_batch = output_batch.masked_select(dev_action_mask_batch.unsqueeze(1).expand(len(dev_action_mask_batch), len(actions))).view(-1, len(actions))
       dev_action_batch = dev_action_batch.masked_select(dev_action_mask_batch) # (seq_len * batch_size)
       batch_dev_loss = loss(output_batch, dev_action_batch)
-      dev_loss += batch_dev_loss.data[0]
+      dev_loss += batch_dev_loss.item()
 
       # minimize pytorch memory usage
-      del dev_data_batch
-      del dev_data_mask_batch
-      del dev_postag_batch
-      del dev_action_batch
-      if use_pretrained_emb:
-        del dev_data_pre_batch
+      # del dev_data_batch
+      # del dev_data_mask_batch
+      # del dev_postag_batch
+      # del dev_action_batch
+      # if use_pretrained_emb:
+      #   del dev_data_pre_batch
 
     logging.info("End of {0} epoch: ".format(epoch_i))
-    # logging.info("Training loss: {0}".format(loss_output.data[0]))
+    # logging.info("Training loss: {0}".format(loss_output[0].item()))
     logging.info("Dev loss: {0}".format(dev_loss))
 
     logging.info("Saving model...")
     torch.save(parser, open(options.model_file + ".nll_{0:.2f}.epoch_{1}".format(dev_loss, epoch_i), 'wb'),
                pickle_module=dill)
     logging.info("Done.")
+
+    if type(scheduler) == ReduceLROnPlateau:
+      scheduler.step(dev_loss)
+      logging.info("Current learning rate {0}".format(optimizer.param_groups[0]['lr']))
 
 
 if __name__ == "__main__":
