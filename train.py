@@ -251,7 +251,7 @@ def main(options):
       post_loss_output = loss(post_output_batch, train_action_batch)
       """
 
-      logging.debug(loss_output[0].item())
+      logging.debug(loss_output.item())
       _, pred = output_batch.max(dim=1)
 
       u_pred = map(lambda x: la2ua[x], pred.tolist())

@@ -182,7 +182,7 @@ class StackLSTMParser(nn.Module):
       self.W_d = nn.Bilinear(options.action_emb_dim, self.input_dim, 1, bias=False)
       self.W_b = nn.Bilinear(options.action_emb_dim, self.input_dim, 1, bias=False)
 
-    self.softmax = nn.LogSoftmax() # LogSoftmax works on final dimension only for two dimension tensors. Be careful.
+    self.softmax = nn.LogSoftmax(dim=-1) # LogSoftmax works on final dimension only for two dimension tensors. Be careful.
 
     self.composition_logging_factor = 1000
     self.composition_logging_count = 0
@@ -341,11 +341,10 @@ class StackLSTMParser(nn.Module):
 
     stack_pos[(stack_pos < 0)] = 0
     buffer_pos[(buffer_pos < 0)] = 0
-    pdb.set_trace()
     active_token_emb[:, 0:k, :] = \
-      self.token_stack.hidden_stack[ stack_pos, torch.arange(0, batch_size).unsqueeze(0).expand(k, -1).type(self.long_dtype), :]  # (batch_size, k, input_dim)
+      self.token_stack.hidden_stack[ stack_pos, torch.arange(0, batch_size).unsqueeze(0).expand(k, -1).type(self.long_dtype), :].permute(1, 0, 2)  # (batch_size, k, input_dim)
     active_token_emb[:, k:k*2, :] = \
-      self.token_buffer.hidden_stack[ buffer_pos, torch.arange(0, batch_size).unsqueeze(0).expand(k, -1).type(self.long_dtype), :]  # (batch_size, k, input_dim)
+      self.token_buffer.hidden_stack[ buffer_pos, torch.arange(0, batch_size).unsqueeze(0).expand(k, -1).type(self.long_dtype), :].permute(1, 0, 2)  # (batch_size, k, input_dim)
 
     # calculate attention weights
     if self.hard_composition:
@@ -370,13 +369,13 @@ class StackLSTMParser(nn.Module):
     alpha_d[pos_mask] = 0
     alpha_b[pos_mask] = 0
 
-    if torch.sum(alpha_h)[0].item() != torch.sum(alpha_h)[0].item():
+    if torch.sum(alpha_h).item() != torch.sum(alpha_h).item():
       pdb.set_trace()
 
-    if torch.sum(alpha_d)[0].item() != torch.sum(alpha_d)[0].item():
+    if torch.sum(alpha_d).item() != torch.sum(alpha_d).item():
       pdb.set_trace()
 
-    if torch.sum(alpha_b)[0].item() != torch.sum(alpha_b)[0].item():
+    if torch.sum(alpha_b).item() != torch.sum(alpha_b).item():
       pdb.set_trace()
 
     self.composition_logging_count += 1
