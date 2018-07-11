@@ -3,6 +3,7 @@ import torch
 from torch import nn
 # from torch.autograd import Variable
 
+
 class StackLSTMCell(nn.Module):
 
   def __init__(self, input_size, hidden_size, dropout_rate, stack_size, num_layers=1,
@@ -74,7 +75,7 @@ class StackLSTMCell(nn.Module):
     self.hidden_stack[self.pos + 1, batch_indexes, :, :] = next_hidden.clone()
     self.cell_stack[self.pos + 1, batch_indexes, :, :] = next_cell.clone()
     self.pos = self.pos + op  # XXX: should NOT use in-place assignment!
-    
+
     hidden_ret = self.hidden_stack[self.pos, batch_indexes, :, :]
     cell_ret = self.hidden_stack[self.pos, batch_indexes, :, :]
     return hidden_ret[:, :, -1], cell_ret[:, :, -1]
@@ -97,6 +98,46 @@ class StackLSTMCell(nn.Module):
 
   def size(self):
     return torch.max(self.pos + 1)[0].item()
+
+
+class ReducerLSTMCell(StackLSTMCell):
+
+  def forward(self, input, op):
+    """
+    stack needs to be built before this is called.
+
+    :param input: (batch_size, input_size), input vector, in batch.
+    :param op: (batch_size,), stack operations, in batch (-1 means reduce, +1 means push).
+    :return: (hidden, cell): both are (batch_size, hidden_dim)
+    """
+
+    batch_size = input.size(0)
+    batch_indexes = torch.arange(0, batch_size).type(self.long_dtype)
+
+    # take care of the shifts
+    cur_hidden, cur_cell = self.hidden_stack[self.pos, batch_indexes, :, :], \
+                           self.cell_stack[self.pos, batch_indexes, :, :]
+    next_hidden, next_cell = self.lstm(input, (cur_hidden, cur_cell))
+
+    self.hidden_stack[self.pos + 1, batch_indexes, :, :] = next_hidden.clone()
+    self.cell_stack[self.pos + 1, batch_indexes, :, :] = next_cell.clone()
+
+    # take care of the reduces
+    reduced_indexes = batch_indexes[op == -1]
+    reduced_pos = (self.pos - 1)[op == -1]
+    if len(reduced_indexes) != 0:
+      prev2_hidden, prev2_cell = self.hidden_stack[self.pos - 2, batch_indexes, :, :], \
+                                 self.cell_stack[self.pos - 2, batch_indexes, :, :]
+      next_hidden, next_cell = self.lstm(input, (prev2_hidden, prev2_cell))
+      self.hidden_stack[reduced_pos, reduced_indexes, :, :] = next_hidden[reduced_indexes, :, :]
+      self.cell_stack[reduced_pos, reduced_indexes, :, :] = next_cell[reduced_indexes, :, :]
+
+    self.pos = self.pos + op  # XXX: should NOT use in-place assignment!
+
+    hidden_ret = self.hidden_stack[self.pos, batch_indexes, :, :]
+    cell_ret = self.cell_stack[self.pos, batch_indexes, :, :]
+    return hidden_ret[:, :, -1], cell_ret[:, :, -1]
+
 
 class BatchedToyStackModel(nn.Module):
 

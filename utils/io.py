@@ -138,11 +138,24 @@ class Oracle2CoNLLWriter:
     self.transSys = transSys
 
   def terminated(self, j, t, stack, buf):
+    """
+    # j is None when buf is empty
+
+    # ret = 0 -> peacefully return
+    # ret = 1 -> premature buffer emptiness
+    # ret = 2 -> premature stack emptiness
+    """
+
     if self.transSys == TransitionSystems.ASd:
-      raise NotImplementedError
+      if not j and t["OP"] == "Shift":
+        return 1
+      elif len(stack) < 2 and (t["OP"] == "Left-Arc" or t["OP"] == "Right-Arc"):
+        return 2
+      else:
+        return 0
     elif self.transSys == TransitionSystems.AES or \
         self.transSys == TransitionSystems.AER:
-      if not j:
+      if not j and (t["OP"] == "Shift" or t["OP"] == "Right-Arc"):
         return 1
       elif len(stack) < 2 and t["OP"] == "Left-Arc":
         return 2
@@ -226,7 +239,7 @@ class Oracle2CoNLLWriter:
           output[stack[n]] = output_str(stack[n], j, relation, ref_lines)
           stack = stack[(n + 1):]
         elif t["OP"] == 'Right-Arc':
-          pos[j] = t[3]
+          # pos[j] = t[3]
           n = int(t[1]) - 1
           relation = t[2]
           parent[j] = stack[n]
@@ -235,7 +248,7 @@ class Oracle2CoNLLWriter:
           buf = buf[1:]
           stack = [j] + stack[n:]
         else:
-          pos[j] = t[1]
+          # pos[j] = t[1]
           stack = [j] + stack
           buf = buf[1:]
       elif self.transSys in [TransitionSystems.AES, TransitionSystems.AER]:
@@ -261,19 +274,19 @@ class Oracle2CoNLLWriter:
           stack = stack[1:]
       elif self.transSys == TransitionSystems.ASd:
         if t["OP"] == 'Left-Arc':
-          relation = t[1]
+          relation = t["DEPREL"]
           parent[stack[1]] = stack[0]
           # output[stack[1]] = "%d\t%s" % (stack[0], relation)
           output[stack[1]] = output_str(stack[1], stack[0], relation, ref_lines)
           stack = [stack[0]] + stack[2:]
         elif t["OP"] == 'Right-Arc':
-          relation = t[1]
+          relation = t["DEPREL"]
           parent[stack[0]] = stack[1]
           # output[stack[0]] = "%d\t%s" % (stack[1], relation)
           output[stack[0]] = output_str(stack[0], stack[1], relation, ref_lines)
           stack = stack[1:]
         elif t["OP"] == 'Shift':
-          pos[j] = t[1]
+          # pos[j] = t[1]
           stack = [j] + stack
           buf = buf[1:]
       elif self.transSys == TransitionSystems.AH:

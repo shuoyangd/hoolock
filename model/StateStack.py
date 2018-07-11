@@ -66,70 +66,10 @@ class StateStack(nn.Module):
 
     batch_size = input.size(0)
     batch_indexes = torch.arange(0, batch_size).type(self.long_dtype)
-    self.hidden_stack[(self.pos + 1).data, batch_indexes, :] = input.clone()
+    self.hidden_stack[self.pos + 1, batch_indexes, :] = input.clone()
     self.pos = self.pos + op  # XXX: should NOT use in-place assignment!
-    hidden_ret = self.hidden_stack[self.pos.data, batch_indexes, :]
+    hidden_ret = self.hidden_stack[self.pos, batch_indexes, :]
     return hidden_ret
-
-    """
-    batch_size = input.size(0)
-    push_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == 1).data]
-    pop_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == -1).data]
-    hold_indexes = torch.arange(0, batch_size).type(self.long_dtype)[(op == 0).data]
-
-    if len(push_indexes) != 0:
-      input = input[push_indexes, :]
-      # cur_hidden = self.hidden_stack[self.pos[push_indexes].data, push_indexes, :, :].clone()  # (push_indexes, hidden_size, num_layers)
-      # cur_cell = self.cell_stack[self.pos[push_indexes].data, push_indexes, :, :].clone()  # (push_indexes, hidden_size, num_layers)
-      # next_hidden, next_cell = self.lstm(input, (cur_hidden, cur_cell))
-      next_hidden = input.clone()
-    if len(pop_indexes) != 0:
-      prev_hidden = self.hidden_stack[((self.pos[pop_indexes] - 1) % (self.seq_len + 1)).data, pop_indexes, :].clone()
-      # prev_cell = self.cell_stack[((self.pos[pop_indexes] - 1) % (self.stack_size + 1)).data, pop_indexes, :, :].clone()
-      # next_hidden, next_cell = self.lstm(input, (prev_hidden, prev_cell))
-
-    if len(push_indexes) != 0:
-      self.hidden_stack[(self.pos[push_indexes] + 1).data, push_indexes, :] = next_hidden
-
-    if len(hold_indexes) != 0:
-      cur_hidden = self.hidden_stack[self.pos[hold_indexes].data, hold_indexes, :].clone()  # (hold_indexes, hidden_size, num_layers)
-      # cur_cell = self.cell_stack[self.pos[hold_indexes].data, hold_indexes, :, :].clone()  # (hold_indexes, hidden_size, num_layers)
-
-    # we only care about the hidden & cell states of the last layer for return values
-    hidden_ret = Variable(torch.zeros(batch_size, self.hidden_size).type(self.dtype))
-    # cell_ret = Variable(torch.zeros(batch_size, self.hidden_size).type(self.dtype))
-    if len(hold_indexes) != 0:
-      hidden_ret[hold_indexes] = cur_hidden
-      # cell_ret[hold_indexes] = cur_cell[:, :, -1]
-    if len(push_indexes) != 0:
-      hidden_ret[push_indexes] = next_hidden
-      # cell_ret[push_indexes] = next_cell[:, :, -1]
-    if len(pop_indexes) != 0:
-      hidden_ret[pop_indexes] = prev_hidden
-      # cell_ret[pop_indexes] = prev_cell[:, :, -1]
-
-    # position overflow/underflow protection should not be done here,
-    # they may not be desirable depending on the application
-    # self.pos += op
-    self.pos = self.pos + op  # XXX: should NOT use in-place assignment!
-
-    # return hidden_ret, cell_ret
-    return hidden_ret
-    """
-
-  """
-  def forward(self, input, op):
-
-    :param input: (batch_size, input_size), input tensor, in batch.
-    :param op: (batch_size,), stack operations, in batch (-1 means pop, 0 means hold, 1 means push).
-    :return: hidden (batch_size, hidden_dim)
-
-    indexes = torch.arange(0, self.batch_size).type(self.long_dtype)
-    self.hidden_stack[(self.pos + 1).data, indexes, :] = input
-    self.pos += op
-    hidden_ret = self.hidden_stack[self.pos.data, indexes, :].clone()
-    return hidden_ret
-  """
 
   def init(self, init_var=None):
     if init_var is None:
@@ -138,9 +78,53 @@ class StateStack(nn.Module):
       return init_var
 
   def head(self):
-    dtype = self.hidden_stack.long().data.type()
-    ret = self.hidden_stack[self.pos.data, torch.arange(0, len(self.pos)).type(dtype), :].clone()
+    dtype = self.hidden_stack.long().type()
+    ret = self.hidden_stack[self.pos, torch.arange(0, len(self.pos)).type(dtype), :].clone()
     return ret
 
   def size(self):
-    return torch.min(self.pos + 1).data[0]
+    return torch.min(self.pos + 1)[0]
+
+
+class StateReducer(StateStack):
+
+  def __init__(self, hidden_size, init_var=None):
+    super(StateReducer, self).__init__(hidden_size, init_var)
+
+    self.reducer = nn.Sequential(
+      nn.Linear(self.hidden_size * 2, self.hidden_size),
+      nn.Tanh())
+
+  def forward(self, input, op, dir_):
+    batch_size = input.size(0)
+    batch_indexes = torch.arange(0, batch_size).type(self.long_dtype)
+
+    # take care of the shifts
+    self.hidden_stack[self.pos + 1, batch_indexes, :] = input.clone()
+
+    # take care of the reduces
+    cur_hidden = self.hidden_stack[self.pos, batch_indexes, :].clone()
+    prev_hidden = self.hidden_stack[self.pos - 1, batch_indexes, :].clone()  # (batch_size, hidden_size)
+
+    is_left_reduce = (op == -1) & (dir_ == 0)
+    is_right_reduce = (op == -1) & (dir_ == 1)
+    reducing_ret = torch.zeros(batch_size, self.hidden_size).type(self.dtype)
+    if len(is_left_reduce) != 0:
+      left_reduced_indexes = batch_indexes[is_left_reduce]
+      left_reduced_pos = (self.pos - 1)[is_left_reduce]
+      left_composed = self.reducer(torch.cat([cur_hidden, prev_hidden], dim=1))[is_left_reduce, :]
+      self.hidden_stack[left_reduced_pos, left_reduced_indexes, :] = left_composed
+      reducing_ret[is_left_reduce, :] = left_composed
+
+    if len(is_right_reduce) != 0:
+      right_reduced_indexes = batch_indexes[is_right_reduce]
+      right_reduced_pos =  (self.pos - 1)[is_right_reduce]
+      right_composed = self.reducer(torch.cat([prev_hidden, cur_hidden], dim=1))[is_right_reduce, :]
+      self.hidden_stack[right_reduced_pos, right_reduced_indexes, :] = right_composed
+      reducing_ret[is_right_reduce, :] = right_composed
+
+    self.pos = self.pos + op  # XXX: should NOT use in-place assignment!
+    hidden_ret = self.hidden_stack[self.pos, batch_indexes, :]
+
+    return hidden_ret, reducing_ret
+

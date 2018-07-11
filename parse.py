@@ -69,6 +69,10 @@ def main(options):
   parser.gpuid = options.gpuid
   if use_cuda:
     parser = parser.cuda()
+    parser.stack_action_mapping = parser.stack_action_mapping.cuda()
+    parser.buffer_action_mapping = parser.buffer_action_mapping.cuda()
+    if hasattr(parser, "dir_mapping"):
+        parser.dir_mapping = parser.dir_mapping.cuda()
   else:
     parser = parser.cpu()
     parser.dtype = torch.FloatTensor

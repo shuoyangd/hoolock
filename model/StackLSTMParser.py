@@ -7,8 +7,8 @@ import utils.rand
 import torch
 from torch import nn
 # from torch.autograd import Variable
-from model.StackLSTMCell import StackLSTMCell
-from model.StateStack import StateStack
+from model.StackLSTMCell import StackLSTMCell, ReducerLSTMCell
+from model.StateStack import StateStack, StateReducer
 from model.MultiLayerLSTMCell import MultiLayerLSTMCell
 
 logging.basicConfig(
@@ -28,6 +28,7 @@ class TransitionSystems(Enum):
     return any(value == item for item in cls)
 
 
+ASd_map = {"Shift": (1, -1, 0), "Left-Arc": (-1, 0, 0), "Right-Arc": (-1, 0, 1)}
 AER_map = {"Shift": (1, -1), "Reduce": (-1, 0), "Left-Arc": (-1, 0), "Right-Arc": (1, -1)}
 AH_map = {"Shift": (1, -1), "Left-Arc": (-1, 0), "Right-Arc": (-1, 0)}
 
@@ -72,6 +73,7 @@ class StackLSTMParser(nn.Module):
     # action mappings
     self.stack_action_mapping = torch.zeros(len(actions),).type(self.long_dtype)
     self.buffer_action_mapping = torch.zeros(len(actions),).type(self.long_dtype)
+    self.dir_mapping = torch.zeros(len(actions),).type(self.long_dtype)
     self.set_action_mappings()
 
     # embeddings
@@ -81,7 +83,7 @@ class StackLSTMParser(nn.Module):
     if pre_vocab is not None:
       self.pre_word_emb = nn.Embedding(pre_vocab.vectors.size(0), pre_vocab.dim)
       # initialzie and fixed
-      self.pre_word_emb.weight = pre_vocab.vectors
+      self.pre_word_emb.weight = torch.nn.Parameter(pre_vocab.vectors)
       self.pre_word_emb.weight.requires_grad = False
     else:
       self.pre_word_emb = None
@@ -111,10 +113,17 @@ class StackLSTMParser(nn.Module):
     self.c0 = nn.Parameter(torch.rand(options.hid_dim,).type(self.dtype))
     # FIXME: there is no dropout in StackLSTMCell at this moment
     # BufferLSTM could have 0 or 2 parameters, depending on what is passed for initial hidden and cell state
-    self.stack = StackLSTMCell(options.input_dim, options.hid_dim, options.dropout_rate, options.stack_size, options.num_lstm_layers, self.h0, self.c0)
-    self.buffer = StateStack(options.hid_dim, self.h0)
-    self.token_stack = StateStack(options.input_dim)
-    self.token_buffer = StateStack(options.input_dim) # elememtns in this buffer has size input_dim so h0 and c0 won't fit
+    if self.transSys == TransitionSystems.ASd:
+      self.stack = ReducerLSTMCell(options.input_dim, options.hid_dim, options.dropout_rate, options.stack_size, options.num_lstm_layers, self.h0, self.c0)
+      self.buffer = StateStack(options.hid_dim, self.h0)
+      self.token_stack = StateReducer(options.input_dim)
+      self.token_buffer = StateStack(options.input_dim) # elememtns in this buffer has size input_dim so h0 and c0 won't fit
+    else:
+      self.stack = StackLSTMCell(options.input_dim, options.hid_dim, options.dropout_rate, options.stack_size, options.num_lstm_layers, self.h0, self.c0)
+      self.buffer = StateStack(options.hid_dim, self.h0)
+      self.token_stack = StateStack(options.input_dim)
+      self.token_buffer = StateStack(options.input_dim) # elememtns in this buffer has size input_dim so h0 and c0 won't fit
+    
     self.pre_buffer = MultiLayerLSTMCell(input_size=options.input_dim, hidden_size=options.hid_dim, num_layers=options.num_lstm_layers) # FIXME: dropout needs to be implemented manually
     self.history = MultiLayerLSTMCell(input_size=options.action_emb_dim, hidden_size=options.hid_dim, num_layers=options.num_lstm_layers) # FIXME: dropout needs to be implemented manually
 
@@ -290,6 +299,8 @@ class StackLSTMParser(nn.Module):
       # stack_op, buffer_op = self.map_action(action_i.data)
       stack_op = self.stack_action_mapping.index_select(0, action_i)
       buffer_op = self.buffer_action_mapping.index_select(0, action_i)
+      if self.transSys == TransitionSystems.ASd:
+          dir_ = self.dir_mapping.index_select(0, action_i)
 
       # check boundary conditions, assuming buffer won't be pushed anymore
       # this should be controlled by the valid action above
@@ -305,10 +316,18 @@ class StackLSTMParser(nn.Module):
       # update stack, buffer and action state
       if self.hard_composition or self.composition_k > 0:
         self.token_composition(action_i, self.composition_k)  # not sure if token composition should happen before or after stack/buffer op, but let's try this
+      
+      if self.transSys == TransitionSystems.ASd:
+          # for reduce operations, reduced word embeddings should act as input
+          # before this, stack_input is the buffer head from the previous timestep (ln 329)
+          token_stack_state, reduced_stack_state = self.token_stack(stack_input, stack_op, dir_)
+          stack_input[(stack_op == -1), :] = reduced_stack_state[(stack_op == -1), :]
+      else:
+          token_stack_state = self.token_stack(stack_input, stack_op)
+
       stack_state, _ = self.stack(stack_input, stack_op)
       buffer_state = self.buffer(stack_state, buffer_op) # actually nothing will be pushed
-      token_stack_state = self.token_stack(stack_input, stack_op)
-      token_buffer_state = self.token_buffer(stack_input, buffer_op)
+      token_buffer_state = self.token_buffer(stack_input, buffer_op) # actually nothing will be pushed
       stack_input = self.token_buffer.head()
       action_input = self.action_emb(action_i) # (batch_size, action_emb_dim)
       action_state, action_cell = self.history(action_input, (action_state, action_cell)) # (batch_size, hid_dim, num_lstm_layers)
@@ -413,15 +432,21 @@ class StackLSTMParser(nn.Module):
       action_mask[:, idx] = (action_mask[:, idx] & ((stack_forbid | buffer_forbid) ^ 1))
 
       # transition-system specific operation safety
-      if self.transSys == TransitionSystems.AER:
+      if self.transSys == TransitionSystems.ASd:
+        la_forbid = (self.stack.pos <= 1) & action_str.startswith("Left-Arc")
+        ra_forbid = (self.stack.pos <= 1) & action_str.startswith("Right-Arc")
+        action_mask[:, idx] = (action_mask[:, idx] & ((la_forbid | ra_forbid) ^ 1))
+      elif self.transSys == TransitionSystems.AER:
         la_forbid = (((self.buffer.pos == 0) | (self.stack.pos <= 1)) & action_str.startswith("Left-Arc"))
         ra_forbid = (((self.stack.pos == 0) | (self.stack.pos == 0)) & action_str.startswith("Right-Arc"))
         action_mask[:, idx] = (action_mask[:, idx] & ((la_forbid | ra_forbid) ^ 1))
-
-      if self.transSys == TransitionSystems.AH:
+      elif self.transSys == TransitionSystems.AH:
         la_forbid = (((self.buffer.pos == 0) | (self.stack.pos <= 1)) & action_str.startswith("Left-Arc"))
         ra_forbid = (self.stack.pos <= 1) & action_str.startswith("Right-Arc")
         action_mask[:, idx] = (action_mask[:, idx] & ((la_forbid | ra_forbid) ^ 1))
+      else:
+        logging.fatal("Unimplemented transition system.")
+        raise NotImplementedError 
 
     return action_mask
 
@@ -435,6 +460,8 @@ class StackLSTMParser(nn.Module):
         self.stack_action_mapping[idx], self.buffer_action_mapping[idx] = AER_map.get(transition, (0, 0))
       elif self.transSys == TransitionSystems.AH:
         self.stack_action_mapping[idx], self.buffer_action_mapping[idx] = AH_map.get(transition, (0, 0))
+      elif self.transSys == TransitionSystems.ASd:
+        self.stack_action_mapping[idx], self.buffer_action_mapping[idx], self.dir_mapping[idx] = ASd_map.get(transition, (0, 0, 0))
       else:
         logging.fatal("Unimplemented transition system.")
         raise NotImplementedError
