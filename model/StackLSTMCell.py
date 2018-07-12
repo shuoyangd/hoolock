@@ -77,7 +77,7 @@ class StackLSTMCell(nn.Module):
     self.pos = self.pos + op  # XXX: should NOT use in-place assignment!
 
     hidden_ret = self.hidden_stack[self.pos, batch_indexes, :, :]
-    cell_ret = self.hidden_stack[self.pos, batch_indexes, :, :]
+    cell_ret = self.cell_stack[self.pos, batch_indexes, :, :]
     return hidden_ret[:, :, -1], cell_ret[:, :, -1]
 
   def init_hidden(self, init_var=None):
