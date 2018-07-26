@@ -69,6 +69,8 @@ class StackLSTMParser(nn.Module):
     self.pre_vocab = pre_vocab
     self.actions = actions
     self.postags = postags
+    self.la = torch.LongTensor([ 1 if action_str.startswith("Left-Arc") else 0 for action_str in self.actions ]).type(self.long_dtype).byte()
+    self.ra = torch.LongTensor([ 1 if action_str.startswith("Right-Arc") else 0 for action_str in self.actions ]).type(self.long_dtype).byte()
 
     # action mappings
     self.stack_action_mapping = torch.zeros(len(actions),).type(self.long_dtype)
@@ -327,7 +329,7 @@ class StackLSTMParser(nn.Module):
 
       stack_state, _ = self.stack(stack_input, stack_op)
       buffer_state = self.buffer(stack_state, buffer_op) # actually nothing will be pushed
-      token_buffer_state = self.token_buffer(stack_input, buffer_op) # actually nothing will be pushed
+      token_buffer_state = self.token_buffer(stack_input, buffer_op) # push might happen
       stack_input = self.token_buffer.head()
       action_input = self.action_emb(action_i) # (batch_size, action_emb_dim)
       action_state, action_cell = self.history(action_input, (action_state, action_cell)) # (batch_size, hid_dim, num_lstm_layers)
@@ -423,30 +425,40 @@ class StackLSTMParser(nn.Module):
   def get_valid_actions(self, batch_size):
     action_mask = torch.ones(batch_size, len(self.actions)).type(self.long_dtype).byte()  # (batch_size, len(actions))
 
-    for idx, action_str in enumerate(self.actions):
-      # general popping safety
-      sa = self.stack_action_mapping[idx].repeat(batch_size)
-      ba = self.buffer_action_mapping[idx].repeat(batch_size)
-      stack_forbid = ((sa == -1) & (self.stack.pos <= 1))
-      buffer_forbid = ((ba == -1) & (self.buffer.pos == 0))
-      action_mask[:, idx] = (action_mask[:, idx] & ((stack_forbid | buffer_forbid) ^ 1))
+    # general popping safety
+    sa = self.stack_action_mapping.unsqueeze(0).expand(batch_size, -1)  # (batch_size, len(actions))
+    ba = self.buffer_action_mapping.unsqueeze(0).expand(batch_size, -1)  # (batch_size, len(actions))
+    stack_forbid = ((sa == -1) & (self.stack.pos <= 1).unsqueeze(1).expand(-1, len(self.actions)))  # (batch_size, len(actions))
+    buffer_forbid = ((ba == -1) & (self.buffer.pos <= 0).unsqueeze(1).expand(-1, len(self.actions)))  # (batch_size, len(actions))
+    action_mask = (action_mask & ((stack_forbid | buffer_forbid) ^ 1))
 
-      # transition-system specific operation safety
-      if self.transSys == TransitionSystems.ASd:
-        la_forbid = (self.stack.pos <= 1) & action_str.startswith("Left-Arc")
-        ra_forbid = (self.stack.pos <= 1) & action_str.startswith("Right-Arc")
-        action_mask[:, idx] = (action_mask[:, idx] & ((la_forbid | ra_forbid) ^ 1))
-      elif self.transSys == TransitionSystems.AER:
-        la_forbid = (((self.buffer.pos == 0) | (self.stack.pos <= 1)) & action_str.startswith("Left-Arc"))
-        ra_forbid = (((self.stack.pos == 0) | (self.stack.pos == 0)) & action_str.startswith("Right-Arc"))
-        action_mask[:, idx] = (action_mask[:, idx] & ((la_forbid | ra_forbid) ^ 1))
-      elif self.transSys == TransitionSystems.AH:
-        la_forbid = (((self.buffer.pos == 0) | (self.stack.pos <= 1)) & action_str.startswith("Left-Arc"))
-        ra_forbid = (self.stack.pos <= 1) & action_str.startswith("Right-Arc")
-        action_mask[:, idx] = (action_mask[:, idx] & ((la_forbid | ra_forbid) ^ 1))
-      else:
-        logging.fatal("Unimplemented transition system.")
-        raise NotImplementedError 
+    # transition-system specific operation safety
+    if self.transSys == TransitionSystems.ASd:
+      la_forbid = (self.stack.pos <= 2).unsqueeze(1).expand(-1, len(self.actions)) & \
+                  self.la.unsqueeze(0).expand(batch_size, -1)  # root
+      # ra_forbid = (self.stack.pos <= 1) & action_str.startswith("Right-Arc")  # same as stack_forbid
+      action_mask = (action_mask & (la_forbid ^ 1))
+
+    elif self.transSys == TransitionSystems.AER:
+      la_forbid = (((self.buffer.pos <= 0).unsqueeze(1).expand(-1, len(self.actions)) |
+                    (self.stack.pos <= 1).unsqueeze(1).expand(-1, len(self.actions))) &
+                    self.la.unsqueeze(0).expand(batch_size, -1))
+      ra_forbid = (((self.stack.pos <= 0).unsqueeze(1).expand(-1, len(self.actions)) |
+                    (self.stack.pos <= 0).unsqueeze(1).expand(-1, len(self.actions))) &
+                    self.ra.unsqueeze(0).expand(batch_size, -1))
+      action_mask = (action_mask & ((la_forbid | ra_forbid) ^ 1))
+
+    elif self.transSys == TransitionSystems.AH:
+      la_forbid = (((self.buffer.pos <= 0).unsqueeze(1).expand(-1, len(self.actions)) |
+                    (self.stack.pos <= 1).unsqueeze(1).expand(-1, len(self.actions))) &
+                    self.la.unsqueeze(0).expand(batch_size, -1))
+      ra_forbid = ((self.stack.pos <= 1).unsqueeze(0).expand(-1, len(self.actions)) & 
+                  self.ra.unsqueeze(0).expand(batch_size, -1))
+      action_mask = (action_mask & ((la_forbid | ra_forbid) ^ 1))
+
+    else:
+      logging.fatal("Unimplemented transition system.")
+      raise NotImplementedError 
 
     return action_mask
 

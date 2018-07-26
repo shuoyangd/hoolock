@@ -217,7 +217,7 @@ class Oracle2CoNLLWriter:
         ret += ("\t" + ref_line["DEPS"])
         ret += ("\t" + ref_line["MISC"])
       else:
-        ret = "%d\t%s" % (head_idx, relation)
+        ret = "%d\t%d\t%d\t_\t_\t_\t%d\t%s\t_\t_" % (idx, idx, idx, head_idx, relation) # LinguaView format 
 
       return ret
 
