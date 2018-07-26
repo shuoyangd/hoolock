@@ -38,8 +38,8 @@ parser.add_argument("--action_seq_len", default=150, type=int,
 
 def make_action_str(oracle_row):
   action_str = oracle_row["OP"]
-  if "DEPREL" in oracle_row:
-    action_str += ("|" + oracle_row["DEPREL"])
+  # if "DEPREL" in oracle_row:
+  #   action_str += ("|" + oracle_row["DEPREL"])
   # if "UPOSTAG" in oracle_row:
   #   action_str += ("|" + oracle_row["UPOSTAG"])
   # if "XPOSTAG" in oracle_row:
