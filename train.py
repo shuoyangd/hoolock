@@ -139,7 +139,8 @@ def main(options):
   if use_pretrained_emb:
     batchized_dev_data_pre, _ = utils.tensor.advanced_batchize_no_sort(dev_data_pre, options.dev_batch_size, pre_vocab.stoi["<pad>"], sort_index)
 
-  parser = model.StackLSTMParser.StackLSTMParser(vocab, actions, options, pre_vocab=pre_vocab, postags=postags)
+  # parser = model.StackLSTMParser.StackLSTMParser(vocab, actions, options, pre_vocab=pre_vocab, postags=postags)
+  parser = model.StackLSTMParser.StackLSTMParser(vocab, actions, options, pre_vocab=pre_vocab)
 
   if use_cuda:
     parser.cuda()
@@ -215,7 +216,8 @@ def main(options):
         if use_pretrained_emb:
           train_data_pre_batch = train_data_pre_batch.cuda()
 
-      output_batch = parser(train_data_batch, train_data_mask_batch, train_data_pre_batch, train_postag_batch, train_action_batch) # (seq_len, batch_size, len(actions)) with dynamic seq_len
+      # output_batch = parser(train_data_batch, train_data_mask_batch, train_data_pre_batch, train_postag_batch, train_action_batch) # (seq_len, batch_size, len(actions)) with dynamic seq_len
+      output_batch = parser(train_data_batch, train_data_mask_batch, train_data_pre_batch, actions=train_action_batch) # (seq_len, batch_size, len(actions)) with dynamic seq_len
       output_batch = output_batch.view(-1, len(actions)) # (seq_len * batch_size, len(actions))
       # train_action_batch_archiv = train_action_batch.clone()
       train_action_batch = train_action_batch.view(-1) # (seq_len * batch_size)
@@ -300,7 +302,8 @@ def main(options):
         if use_pretrained_emb:
           dev_data_pre_batch = dev_data_pre_batch.cuda()
 
-      output_batch = parser(dev_data_batch, dev_data_mask_batch, dev_data_pre_batch, dev_postag_batch, dev_action_batch) # (max_seq_len, dev_batch_size, len(actions))
+      # output_batch = parser(dev_data_batch, dev_data_mask_batch, dev_data_pre_batch, dev_postag_batch, dev_action_batch) # (max_seq_len, dev_batch_size, len(actions))
+      output_batch = parser(dev_data_batch, dev_data_mask_batch, dev_data_pre_batch, actions=dev_action_batch) # (max_seq_len, dev_batch_size, len(actions))
       output_batch = output_batch[0:len(dev_action_batch), :].view(-1, len(actions))
       dev_action_batch = dev_action_batch[0:len(output_batch), :].view(-1)
       dev_action_mask_batch = dev_action_mask_batch.view(-1)

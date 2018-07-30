@@ -95,17 +95,18 @@ class StackLSTMParser(nn.Module):
     else:
       self.postag_emb = None
 
+    assert self.input_dim == options.word_emb_dim
     # token embdding composition
-    token_comp_in_features = options.word_emb_dim # vocab only
-    if pre_vocab is not None:
+    # token_comp_in_features = options.word_emb_dim # vocab only
+    # if pre_vocab is not None:
       # token_comp_in_features += options.pre_word_emb_dim
-      token_comp_in_features += pre_vocab.dim
-    if postags is not None:
-      token_comp_in_features += options.postag_emb_dim
-    self.compose_tokens = nn.Sequential(
-        nn.Linear(token_comp_in_features, options.input_dim),
-        nn.ReLU()
-    )
+    #   token_comp_in_features += pre_vocab.dim
+    # if postags is not None:
+    #   token_comp_in_features += options.postag_emb_dim
+    # self.compose_tokens = nn.Sequential(
+    #     nn.Linear(token_comp_in_features, options.input_dim),
+    #     nn.ReLU()
+    # )
     self.root_input = nn.Parameter(torch.rand(options.input_dim))
 
     # recurrent components
@@ -222,7 +223,8 @@ class StackLSTMParser(nn.Module):
     if self.postag_emb is not None and postags is not None:
       pos_tag_emb = self.postag_emb(postags.t()) # (batch_size, seq_len, word_emb_dim)
       token_comp_input = torch.cat((token_comp_input, pos_tag_emb), dim=-1)
-    token_comp_output = self.compose_tokens(token_comp_input) # (batch_size, seq_len, input_dim), pad at end
+    # token_comp_output = self.compose_tokens(token_comp_input) # (batch_size, seq_len, input_dim), pad at end
+    token_comp_output = token_comp_input
     token_comp_output = torch.transpose(token_comp_output, 0, 1) # (seq_len, batch_size, input_dim), pad at end
     token_comp_output_rev = utils.tensor.masked_revert(token_comp_output, tokens_mask.unsqueeze(2).expand(seq_len, batch_size, self.input_dim), 0) # (seq_len, batch_size, input_dim), pad at end
 
