@@ -69,6 +69,8 @@ opt_parser.add_argument("--hard_composition", default=False, action='store_true'
                         help="Use the hacky hard composition that tries to approximate Dyer et al. 2015. (default=False)")
 opt_parser.add_argument("--composition_k", default=0, type=int,
                         help="k-value for composition on the token embeddings. 0 means no composition would happen. (default=0)")
+opt_parser.add_argument("--st_gumbel_softmax", "-stgs", default=False, action='store_true',
+                        help="Use ST Gumbel-Softmax loss instead of normal softmax. (default=False)")
 
 
 # optimizer

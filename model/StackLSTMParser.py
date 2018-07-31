@@ -186,6 +186,9 @@ class StackLSTMParser(nn.Module):
     self.composition_logging_factor = 1000
     self.composition_logging_count = 0
 
+    # use gumbel-softmax 
+    self.st_gumbel_softmax = options.st_gumbel_softmax
+
 
   def forward(self, tokens, tokens_mask, pre_tokens=None, postags=None, actions=None):
     """
@@ -256,7 +259,10 @@ class StackLSTMParser(nn.Module):
         summary = self.summarize_states(torch.cat((stack_state, token_stack_state, buffer_state, token_buffer_state, action_state[:, :, -1]), dim=1))
       else:
         summary = self.summarize_states(torch.cat((stack_state, buffer_state, action_state[:, :, -1]), dim=1)) # (batch_size, self.state_dim)
-      action_dist = self.softmax(self.state_to_actions(summary)) # (batch_size, len(actions))
+      if self.st_gumbel_softmax:
+        action_dist = utils.rand.gumbel_softmax_sample(self.state_to_actions(summary)) # (batch_size, len(actions))
+      else:
+        action_dist = self.softmax(self.state_to_actions(summary)) # (batch_size, len(actions))
       outputs[step_i, :, :] = action_dist.clone()
 
       # get rid of forbidden actions (only for decoding)
