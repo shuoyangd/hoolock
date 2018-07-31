@@ -71,8 +71,8 @@ def main(options):
     parser = parser.cuda()
     parser.stack_action_mapping = parser.stack_action_mapping.cuda()
     parser.buffer_action_mapping = parser.buffer_action_mapping.cuda()
-    if hasattr(parser, "dir_mapping"):
-        parser.dir_mapping = parser.dir_mapping.cuda()
+    parser.la = parser.la.cuda()
+    parser.ra = parser.ra.cuda()
   else:
     parser = parser.cpu()
     parser.dtype = torch.FloatTensor
