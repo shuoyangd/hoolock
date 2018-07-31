@@ -103,7 +103,7 @@ def sample_gumbel(input):
     eps = 1e-20
     noise.add_(eps).log_().neg_()
     noise.add_(eps).log_().neg_()
-    return Variable(noise)
+    return Variable(noise).type_as(input)
 
 # copied from https://discuss.pytorch.org/t/stop-gradients-for-st-gumbel-softmax/530
 # credit goes to eliabruni

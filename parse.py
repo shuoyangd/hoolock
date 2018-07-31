@@ -2,7 +2,7 @@ from preprocess import conll_indice_mapping_without_padding
 
 import torch
 from torch import cuda
-from torch.autograd import Variable
+# from torch.autograd import Variable
 import utils
 
 import argparse
@@ -68,9 +68,9 @@ def main(options):
   parser.stack_size = options.stack_size
   parser.gpuid = options.gpuid
   if use_cuda:
-    parser.cuda()
+    parser = parser.cuda()
   else:
-    parser.cpu()
+    parser = parser.cpu()
     parser.dtype = torch.FloatTensor
     parser.long_dtype = torch.LongTensor
 
@@ -79,19 +79,19 @@ def main(options):
   writer = utils.io.OracleWriter(open(options.output_file, 'w'), actions, pad_idx, total_sent_n)
   for batch_i in range(len(batchized_test_data)):
     logging.debug("{0} batch updates calculated.".format(batch_i))
-    test_data_batch = Variable(batchized_test_data[batch_i], volatile=True)
-    test_data_mask_batch = Variable(batchized_test_data_mask[batch_i], volatile=True)
-    test_postag_batch = Variable(batchized_test_postag[batch_i], volatile=True)
+    test_data_batch = batchized_test_data[batch_i]
+    test_data_mask_batch = batchized_test_data_mask[batch_i]
+    test_postag_batch = batchized_test_postag[batch_i]
     if use_pretrained_emb:
-      test_data_pre_batch = Variable(batchized_test_data_pre[batch_i], volatile=True)
+      test_data_pre_batch = batchized_test_data_pre[batch_i]
     else:
       test_data_pre_batch = None
     if use_cuda:
-      test_data_batch.cuda()
-      test_data_mask_batch.cuda()
-      test_postag_batch.cuda()
+      test_data_batch = test_data_batch.cuda()
+      test_data_mask_batch = test_data_mask_batch.cuda()
+      test_postag_batch = test_postag_batch.cuda()
       if use_pretrained_emb:
-        test_data_pre_batch.cuda()
+        test_data_pre_batch = test_data_pre_batch.cuda()
 
     output_batch = parser(test_data_batch, test_data_mask_batch,  pre_tokens=test_data_pre_batch, postags=test_postag_batch) # (max_seq_len, batch_size, len(actions))
     _, output_actions = output_batch.max(dim=2) # (max_seq_len, batch_size)

@@ -2,10 +2,11 @@ from enum import Enum
 import logging
 import pdb
 import utils
+import utils.rand
 
 import torch
 from torch import nn
-from torch.autograd import Variable
+# from torch.autograd import Variable
 from model.StackLSTMCell import StackLSTMCell
 from model.StateStack import StateStack
 from model.MultiLayerLSTMCell import MultiLayerLSTMCell
@@ -69,8 +70,8 @@ class StackLSTMParser(nn.Module):
     self.postags = postags
 
     # action mappings
-    self.stack_action_mapping = Variable(torch.zeros(len(actions),).type(self.long_dtype))
-    self.buffer_action_mapping = Variable(torch.zeros(len(actions),).type(self.long_dtype))
+    self.stack_action_mapping = torch.zeros(len(actions),).type(self.long_dtype)
+    self.buffer_action_mapping = torch.zeros(len(actions),).type(self.long_dtype)
     self.set_action_mappings()
 
     # embeddings
@@ -80,7 +81,7 @@ class StackLSTMParser(nn.Module):
     if pre_vocab is not None:
       self.pre_word_emb = nn.Embedding(pre_vocab.vectors.size(0), pre_vocab.dim)
       # initialzie and fixed
-      self.pre_word_emb.weight.data = pre_vocab.vectors
+      self.pre_word_emb.weight = pre_vocab.vectors
       self.pre_word_emb.weight.requires_grad = False
     else:
       self.pre_word_emb = None
@@ -181,7 +182,7 @@ class StackLSTMParser(nn.Module):
       self.W_d = nn.Bilinear(options.action_emb_dim, self.input_dim, 1, bias=False)
       self.W_b = nn.Bilinear(options.action_emb_dim, self.input_dim, 1, bias=False)
 
-    self.softmax = nn.LogSoftmax() # LogSoftmax works on final dimension only for two dimension tensors. Be careful.
+    self.softmax = nn.LogSoftmax(dim=-1) # LogSoftmax works on final dimension only for two dimension tensors. Be careful.
 
     self.composition_logging_factor = 1000
     self.composition_logging_count = 0
@@ -218,8 +219,8 @@ class StackLSTMParser(nn.Module):
     self.stack.build_stack(batch_size, self.gpuid)
 
     # initialize and preload buffer
-    buffer_hiddens = Variable(torch.zeros((seq_len, batch_size, self.hid_dim)).type(self.dtype))
-    buffer_cells = Variable(torch.zeros((seq_len, batch_size, self.hid_dim)).type(self.dtype))
+    buffer_hiddens = torch.zeros((seq_len, batch_size, self.hid_dim)).type(self.dtype)
+    buffer_cells = torch.zeros((seq_len, batch_size, self.hid_dim)).type(self.dtype)
     bh = self.h0.unsqueeze(0).unsqueeze(2).expand(batch_size, self.hid_dim, self.num_lstm_layers)
     bc = self.c0.unsqueeze(0).unsqueeze(2).expand(batch_size, self.hid_dim, self.num_lstm_layers)
     for t_i in range(seq_len):
@@ -230,7 +231,7 @@ class StackLSTMParser(nn.Module):
     self.buffer.build_stack(batch_size, seq_len, buffer_hiddens, tokens_mask, self.gpuid)
     self.token_stack.build_stack(batch_size, self.stack_size, gpuid=self.gpuid)
     self.token_buffer.build_stack(batch_size, seq_len, token_comp_output_rev, tokens_mask, self.gpuid)
-    self.stack(self.root_input.unsqueeze(0).expand(batch_size, self.input_dim), Variable(torch.ones(batch_size).type(self.long_dtype))) # push root
+    self.stack(self.root_input.unsqueeze(0).expand(batch_size, self.input_dim), torch.ones(batch_size).type(self.long_dtype)) # push root
 
     stack_state, _ = self.stack.head() # (batch_size, hid_dim)
     buffer_state = self.buffer.head() # (batch_size, hid_dim)
@@ -241,14 +242,14 @@ class StackLSTMParser(nn.Module):
     action_cell = self.c0.unsqueeze(0).unsqueeze(2).expand(batch_size, self.hid_dim, self.num_lstm_layers) # (batch_size, hid_dim, num_lstm_layers)
 
     # prepare bernoulli probability for exposure indicator
-    batch_exposure_prob = Variable(torch.Tensor([self.exposure_eps] * batch_size).type(self.dtype))
+    batch_exposure_prob = torch.Tensor([self.exposure_eps] * batch_size).type(self.dtype)
 
     # main loop
     if actions is None:
-      outputs = Variable(torch.zeros((self.max_step_length, batch_size, len(self.actions))).type(self.dtype))
+      outputs = torch.zeros((self.max_step_length, batch_size, len(self.actions))).type(self.dtype)
       step_length = self.max_step_length
     else:
-      outputs = Variable(torch.zeros((actions.size()[0], batch_size, len(self.actions))).type(self.dtype))
+      outputs = torch.zeros((actions.size()[0], batch_size, len(self.actions))).type(self.dtype)
       step_length = actions.size()[0]
     step_i = 0
     # during decoding, some instances in the batch may terminate earlier than others
@@ -276,7 +277,7 @@ class StackLSTMParser(nn.Module):
         # there is no sense continue decoding.
         if (num_forbidden_actions == (len(self.actions) - 2)).all():
           break
-        action_dist.masked_fill_(Variable(forbidden_actions), -999)
+        action_dist.masked_fill_(forbidden_actions, -999)
 
       _, action_i = torch.max(action_dist, dim=1) # (batch_size,)
 
@@ -284,7 +285,7 @@ class StackLSTMParser(nn.Module):
       if actions is not None:
         oracle_action_i = actions[step_i, :] # (batch_size,)
         batch_exposure = torch.bernoulli(batch_exposure_prob) # (batch_size,)
-        action_i = Variable((action_i.data.float() * (1 - batch_exposure.data) + oracle_action_i.data.float() * batch_exposure.data).long()) # (batch_size,)
+        action_i = (action_i.float() * (1 - batch_exposure) + oracle_action_i.float() * batch_exposure).long() # (batch_size,)
       # translate action into stack & buffer ops
       # stack_op, buffer_op = self.map_action(action_i.data)
       stack_op = self.stack_action_mapping.index_select(0, action_i)
@@ -323,14 +324,14 @@ class StackLSTMParser(nn.Module):
 
 
   def token_composition(self, action_ids, k):
-    rel_ids = Variable(self.a2r[action_ids.data])  # XXX: gradient won't propagate through this
+    rel_ids = self.a2r[action_ids]  # XXX: gradient won't propagate through this
     batch_size = len(action_ids)
     emb_size = self.action_emb.embedding_dim
 
     action_emb = self.action_emb(action_ids).unsqueeze(1).expand(-1, k * 2, -1)  # (batch_size, k * 2, action_emb_size)
-    active_token_emb = Variable(torch.Tensor(batch_size, k * 2, self.input_dim)).type(self.dtype)  # (batch_size, k * 2, input_dim)
-    stack_pos = self.token_stack.pos.unsqueeze(0).expand(k, -1).data.clone()  # (k, batch_size)
-    buffer_pos = self.token_buffer.pos.unsqueeze(0).expand(k, -1).data.clone()  # (k, batch_size)
+    active_token_emb = torch.Tensor(batch_size, k * 2, self.input_dim).type(self.dtype)  # (batch_size, k * 2, input_dim)
+    stack_pos = self.token_stack.pos.unsqueeze(0).expand(k, -1).clone()  # (k, batch_size)
+    buffer_pos = self.token_buffer.pos.unsqueeze(0).expand(k, -1).clone()  # (k, batch_size)
     for kk in range(k):
       stack_pos[kk] -= kk
       buffer_pos[kk] -= kk
@@ -341,15 +342,15 @@ class StackLSTMParser(nn.Module):
     stack_pos[(stack_pos < 0)] = 0
     buffer_pos[(buffer_pos < 0)] = 0
     active_token_emb[:, 0:k, :] = \
-      self.token_stack.hidden_stack[ stack_pos, torch.arange(0, batch_size).unsqueeze(0).expand(k, -1).type(self.long_dtype), :]  # (batch_size, k, input_dim)
+      self.token_stack.hidden_stack[ stack_pos, torch.arange(0, batch_size).unsqueeze(0).expand(k, -1).type(self.long_dtype), :].permute(1, 0, 2)  # (batch_size, k, input_dim)
     active_token_emb[:, k:k*2, :] = \
-      self.token_buffer.hidden_stack[ buffer_pos, torch.arange(0, batch_size).unsqueeze(0).expand(k, -1).type(self.long_dtype), :]  # (batch_size, k, input_dim)
+      self.token_buffer.hidden_stack[ buffer_pos, torch.arange(0, batch_size).unsqueeze(0).expand(k, -1).type(self.long_dtype), :].permute(1, 0, 2)  # (batch_size, k, input_dim)
 
     # calculate attention weights
     if self.hard_composition:
-      alpha_h = Variable(self.composition_attn_h[action_ids.data, :])
-      alpha_d = Variable(self.composition_attn_d[action_ids.data, :])
-      alpha_b = Variable(self.composition_attn_b[action_ids.data, :])
+      alpha_h = self.composition_attn_h[action_ids, :]
+      alpha_d = self.composition_attn_d[action_ids, :]
+      alpha_b = self.composition_attn_b[action_ids, :]
     else:
       alpha_h = self.W_h(action_emb.contiguous().view(-1, emb_size), active_token_emb.contiguous().view(-1, self.input_dim))  # (batch_size * k * 2)
       alpha_d = self.W_d(action_emb.contiguous().view(-1, emb_size), active_token_emb.contiguous().view(-1, self.input_dim))
@@ -368,21 +369,21 @@ class StackLSTMParser(nn.Module):
     alpha_d[pos_mask] = 0
     alpha_b[pos_mask] = 0
 
-    if torch.sum(alpha_h).data[0] != torch.sum(alpha_h).data[0]:
+    if torch.sum(alpha_h).item() != torch.sum(alpha_h).item():
       pdb.set_trace()
 
-    if torch.sum(alpha_d).data[0] != torch.sum(alpha_d).data[0]:
+    if torch.sum(alpha_d).item() != torch.sum(alpha_d).item():
       pdb.set_trace()
 
-    if torch.sum(alpha_b).data[0] != torch.sum(alpha_b).data[0]:
+    if torch.sum(alpha_b).item() != torch.sum(alpha_b).item():
       pdb.set_trace()
 
     self.composition_logging_count += 1
     if self.composition_logging_count % self.composition_logging_factor == 0:
-      logging.info("sample action: {0}".format(self.actions[action_ids.data[0]]))
-      logging.info("head attention value sample: {0}".format(alpha_h[0, :].data.tolist()))
-      logging.info("dependency attention value sample: {0}".format(alpha_d[0, :].data.tolist()))
-      logging.info("writing head weights value sample; {0}".format(alpha_b[0, :].data.tolist()))
+      logging.info("sample action: {0}".format(self.actions[action_ids[0].item()]))
+      logging.info("head attention value sample: {0}".format(alpha_h[0, :].tolist()))
+      logging.info("dependency attention value sample: {0}".format(alpha_d[0, :].tolist()))
+      logging.info("writing head weights value sample; {0}".format(alpha_b[0, :].tolist()))
 
     # use weighted sum to get attentional h, d, and r
     h = torch.sum(active_token_emb.permute(2, 0, 1) * alpha_h, dim=2).t()  # (input_dim, batch_size, k*2) * (batch_size, k * 2) -> sum dim2 -> transpose -> (batch_size, input_dim)
@@ -407,19 +408,19 @@ class StackLSTMParser(nn.Module):
       # general popping safety
       sa = self.stack_action_mapping[idx].repeat(batch_size)
       ba = self.buffer_action_mapping[idx].repeat(batch_size)
-      stack_forbid = ((sa == -1).data & (self.stack.pos <= 1).data)
-      buffer_forbid = ((ba == -1).data & (self.buffer.pos == 0).data)
+      stack_forbid = ((sa == -1) & (self.stack.pos <= 1))
+      buffer_forbid = ((ba == -1) & (self.buffer.pos == 0))
       action_mask[:, idx] = (action_mask[:, idx] & ((stack_forbid | buffer_forbid) ^ 1))
 
       # transition-system specific operation safety
       if self.transSys == TransitionSystems.AER:
-        la_forbid = (((self.buffer.pos == 0).data | (self.stack.pos <= 1).data) & action_str.startswith("Left-Arc"))
-        ra_forbid = (((self.stack.pos == 0).data | (self.stack.pos == 0).data) & action_str.startswith("Right-Arc"))
+        la_forbid = (((self.buffer.pos == 0) | (self.stack.pos <= 1)) & action_str.startswith("Left-Arc"))
+        ra_forbid = (((self.stack.pos == 0) | (self.stack.pos == 0)) & action_str.startswith("Right-Arc"))
         action_mask[:, idx] = (action_mask[:, idx] & ((la_forbid | ra_forbid) ^ 1))
 
       if self.transSys == TransitionSystems.AH:
-        la_forbid = (((self.buffer.pos == 0).data | (self.stack.pos <= 1).data) & action_str.startswith("Left-Arc"))
-        ra_forbid = (self.stack.pos <= 1).data & action_str.startswith("Right-Arc")
+        la_forbid = (((self.buffer.pos == 0) | (self.stack.pos <= 1)) & action_str.startswith("Left-Arc"))
+        ra_forbid = (self.stack.pos <= 1) & action_str.startswith("Right-Arc")
         action_mask[:, idx] = (action_mask[:, idx] & ((la_forbid | ra_forbid) ^ 1))
 
     return action_mask

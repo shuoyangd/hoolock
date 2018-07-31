@@ -1,7 +1,7 @@
 from model.MultiLayerLSTMCell import MultiLayerLSTMCell
 import torch
 from torch import nn
-from torch.autograd import Variable
+# from torch.autograd import Variable
 
 class StackLSTMCell(nn.Module):
 
@@ -41,10 +41,10 @@ class StackLSTMCell(nn.Module):
       self.dtype = torch.FloatTensor
       self.long_dtype = torch.LongTensor
 
-    self.pos = Variable(torch.LongTensor([0] * batch_size).type(self.long_dtype))
+    self.pos = torch.LongTensor([0] * batch_size).type(self.long_dtype)
 
-    self.hidden_stack = Variable(torch.zeros(self.stack_size + 1, batch_size, self.hidden_size, self.num_layers).type(self.dtype))
-    self.cell_stack = Variable(torch.zeros(self.stack_size + 1, batch_size, self.hidden_size, self.num_layers).type(self.dtype))
+    self.hidden_stack = torch.zeros(self.stack_size + 1, batch_size, self.hidden_size, self.num_layers).type(self.dtype)
+    self.cell_stack = torch.zeros(self.stack_size + 1, batch_size, self.hidden_size, self.num_layers).type(self.dtype)
 
     # seq_len = preload_hidden.size()[0]
     # if preload_hidden is not None:
@@ -68,35 +68,35 @@ class StackLSTMCell(nn.Module):
 
     batch_size = input.size(0)
     batch_indexes = torch.arange(0, batch_size).type(self.long_dtype)
-    cur_hidden, cur_cell = self.hidden_stack[self.pos.data, batch_indexes, :, :], \
-                           self.cell_stack[self.pos.data, batch_indexes, :, :]
+    cur_hidden, cur_cell = self.hidden_stack[self.pos, batch_indexes, :, :], \
+                           self.cell_stack[self.pos, batch_indexes, :, :]
     next_hidden, next_cell = self.lstm(input, (cur_hidden, cur_cell))
-    self.hidden_stack[(self.pos + 1).data, batch_indexes, :, :] = next_hidden.clone()
-    self.cell_stack[(self.pos + 1).data, batch_indexes, :, :] = next_cell.clone()
+    self.hidden_stack[self.pos + 1, batch_indexes, :, :] = next_hidden.clone()
+    self.cell_stack[self.pos + 1, batch_indexes, :, :] = next_cell.clone()
     self.pos = self.pos + op  # XXX: should NOT use in-place assignment!
     
-    hidden_ret = self.hidden_stack[self.pos.data, batch_indexes, :, :]
-    cell_ret = self.hidden_stack[self.pos.data, batch_indexes, :, :]
+    hidden_ret = self.hidden_stack[self.pos, batch_indexes, :, :]
+    cell_ret = self.cell_stack[self.pos, batch_indexes, :, :]
     return hidden_ret[:, :, -1], cell_ret[:, :, -1]
 
   def init_hidden(self, init_var=None):
     if init_var is None:
-      return Variable(torch.rand((self.hidden_size,)))
+      return torch.rand((self.hidden_size,))
     else:
       return init_var
 
   def init_cell(self, init_var=None):
     if init_var is None:
-      return Variable(torch.rand((self.hidden_size,)))
+      return torch.rand((self.hidden_size,))
     else:
       return init_var
 
   def head(self):
-    return self.hidden_stack[self.pos.data, torch.arange(0, len(self.pos)).type(self.long_dtype), :][:, :, -1] ,\
-           self.cell_stack[self.pos.data, torch.arange(0, len(self.pos)).type(self.long_dtype), :][:, :, -1]
+    return self.hidden_stack[self.pos, torch.arange(0, len(self.pos)).type(self.long_dtype), :][:, :, -1] ,\
+           self.cell_stack[self.pos, torch.arange(0, len(self.pos)).type(self.long_dtype), :][:, :, -1]
 
   def size(self):
-    return torch.max(self.pos + 1).data[0]
+    return torch.max(self.pos + 1)[0].item()
 
 class BatchedToyStackModel(nn.Module):
 
@@ -150,9 +150,9 @@ def gen_data(vocab_size, seq_n, seq_len, batch_size = None):
   if batch_size:
     (X, P, Y) = batchize_data(X, P, Y, batch_size)
 
-  X = Variable(X)
-  P = Variable(P)
-  Y = Variable(Y)
+  # X = Variable(X)
+  # P = Variable(P)
+  # Y = Variable(Y)
   return X, P, Y
 
 def batchize_data(X, P, Y, batch_size):
@@ -221,25 +221,25 @@ if __name__ == "__main__":
       loss.backward()
       optimizer.step()
 
-    print("avg loss: {0}".format(avg_loss.data[0] / SEQN))
+    print("avg loss: {0}".format(avg_loss.item() / SEQN))
 
     correct = 0
     correct_push = 0
     correct_hold = 0
     correct_pop = 0
     total = SEQN_t * SEQLEN_t
-    total_push = torch.sum(P_t[:, 1:] == 1).data[0]
-    total_hold = torch.sum(P_t[:, 1:] == 0).data[0]
-    total_pop = torch.sum(P_t[:, 1:] == -1).data[0]
+    total_push = torch.sum(P_t[:, 1:] == 1).item()
+    total_hold = torch.sum(P_t[:, 1:] == 0).item()
+    total_pop = torch.sum(P_t[:, 1:] == -1).item()
     for i in range(len(X_t)):
       output = model(X_t[i], P_t[i])
       _, argmax = torch.max(output, 1)
       gold = Y_t[i].view(-1)
       op = P_t[:, 1:][i].view(-1)
-      correct += torch.sum(gold == argmax).data[0]
-      correct_push += torch.sum((op == 1).data & (gold == argmax).data)
-      correct_hold += torch.sum((op == 0).data & (gold == argmax).data)
-      correct_pop += torch.sum((op == -1).data & (gold == argmax).data)
+      correct += torch.sum(gold == argmax).item()
+      correct_push += torch.sum((op == 1) & (gold == argmax)).item()
+      correct_hold += torch.sum((op == 0) & (gold == argmax)).item()
+      correct_pop += torch.sum((op == -1) & (gold == argmax)).item()
 
     print("prediction accuracy: {0} / {1} = {2}\namong which:".format(correct, total, correct / total))
     print("correct push: {0} / {1} = {2}".format(correct_push, total_push, 0 if total_push == 0 else correct_push / total_push))
