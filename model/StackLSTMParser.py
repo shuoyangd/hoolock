@@ -28,7 +28,7 @@ class TransitionSystems(Enum):
     return any(value == item for item in cls)
 
 
-ASd_map = {"Shift": (1, -1, 0), "Left-Arc": (-1, 0, 0), "Right-Arc": (-1, 0, 1)}
+ASd_map = {"Shift": (1, -1), "Left-Arc": (-1, 0), "Right-Arc": (-1, 0)}
 AER_map = {"Shift": (1, -1), "Reduce": (-1, 0), "Left-Arc": (-1, 0), "Right-Arc": (1, -1)}
 AH_map = {"Shift": (1, -1), "Left-Arc": (-1, 0), "Right-Arc": (-1, 0)}
 
@@ -75,7 +75,6 @@ class StackLSTMParser(nn.Module):
     # action mappings
     self.stack_action_mapping = torch.zeros(len(actions),).type(self.long_dtype)
     self.buffer_action_mapping = torch.zeros(len(actions),).type(self.long_dtype)
-    self.dir_mapping = torch.zeros(len(actions),).type(self.long_dtype)
     self.set_action_mappings()
 
     # embeddings
@@ -303,8 +302,6 @@ class StackLSTMParser(nn.Module):
       # stack_op, buffer_op = self.map_action(action_i.data)
       stack_op = self.stack_action_mapping.index_select(0, action_i)
       buffer_op = self.buffer_action_mapping.index_select(0, action_i)
-      if self.transSys == TransitionSystems.ASd:
-          dir_ = self.dir_mapping.index_select(0, action_i)
 
       # check boundary conditions, assuming buffer won't be pushed anymore
       # this should be controlled by the valid action above
@@ -324,6 +321,7 @@ class StackLSTMParser(nn.Module):
       if self.transSys == TransitionSystems.ASd:
           # for reduce operations, reduced word embeddings should act as input
           # before this, stack_input is the buffer head from the previous timestep (ln 329)
+          dir_ = self.ra[action_i]  # (batch_size,)
           token_stack_state, reduced_stack_state = self.token_stack(stack_input, stack_op, dir_)
           stack_input[(stack_op == -1), :] = reduced_stack_state[(stack_op == -1), :]
       else:
@@ -475,7 +473,7 @@ class StackLSTMParser(nn.Module):
       elif self.transSys == TransitionSystems.AH:
         self.stack_action_mapping[idx], self.buffer_action_mapping[idx] = AH_map.get(transition, (0, 0))
       elif self.transSys == TransitionSystems.ASd:
-        self.stack_action_mapping[idx], self.buffer_action_mapping[idx], self.dir_mapping[idx] = ASd_map.get(transition, (0, 0, 0))
+        self.stack_action_mapping[idx], self.buffer_action_mapping[idx] = ASd_map.get(transition, (0, 0))
       else:
         logging.fatal("Unimplemented transition system.")
         raise NotImplementedError

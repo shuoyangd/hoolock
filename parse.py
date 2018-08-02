@@ -97,7 +97,8 @@ def main(options):
       if use_pretrained_emb:
         test_data_pre_batch = test_data_pre_batch.cuda()
 
-    output_batch = parser(test_data_batch, test_data_mask_batch,  pre_tokens=test_data_pre_batch, postags=test_postag_batch) # (max_seq_len, batch_size, len(actions))
+    # output_batch = parser(test_data_batch, test_data_mask_batch,  pre_tokens=test_data_pre_batch, postags=test_postag_batch) # (max_seq_len, batch_size, len(actions))
+    output_batch = parser(test_data_batch, test_data_mask_batch,  pre_tokens=test_data_pre_batch) # (max_seq_len, batch_size, len(actions))
     _, output_actions = output_batch.max(dim=2) # (max_seq_len, batch_size)
     writer.writesent(output_actions)
 
