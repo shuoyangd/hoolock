@@ -240,7 +240,7 @@ def main(options):
       """
 
       if options.grad_clip > 0.0:
-        torch.nn.utils.clip_grad_norm(parser.parameters(), options.grad_clip)
+        torch.nn.utils.clip_grad_norm_(parser.parameters(), options.grad_clip)
       optimizer.step()
 
       """

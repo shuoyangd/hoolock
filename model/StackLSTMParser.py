@@ -125,7 +125,7 @@ class StackLSTMParser(nn.Module):
       self.buffer = StateStack(options.hid_dim, self.h0)
       self.token_stack = StateStack(options.input_dim)
       self.token_buffer = StateStack(options.input_dim) # elememtns in this buffer has size input_dim so h0 and c0 won't fit
-    
+
     self.pre_buffer = MultiLayerLSTMCell(input_size=options.input_dim, hidden_size=options.hid_dim, num_layers=options.num_lstm_layers) # FIXME: dropout needs to be implemented manually
     self.history = MultiLayerLSTMCell(input_size=options.action_emb_dim, hidden_size=options.hid_dim, num_layers=options.num_lstm_layers) # FIXME: dropout needs to be implemented manually
 
@@ -198,7 +198,7 @@ class StackLSTMParser(nn.Module):
     self.composition_logging_factor = 1000
     self.composition_logging_count = 0
 
-    # use gumbel-softmax 
+    # use gumbel-softmax
     self.st_gumbel_softmax = options.st_gumbel_softmax
 
 
@@ -318,7 +318,7 @@ class StackLSTMParser(nn.Module):
       # update stack, buffer and action state
       if self.hard_composition or self.composition_k > 0:
         self.token_composition(action_i, self.composition_k)  # not sure if token composition should happen before or after stack/buffer op, but let's try this
-      
+
       if self.transSys == TransitionSystems.ASd:
           # for reduce operations, reduced word embeddings should act as input
           # before this, stack_input is the buffer head from the previous timestep (ln 329)
@@ -452,13 +452,13 @@ class StackLSTMParser(nn.Module):
       la_forbid = (((self.buffer.pos <= 0).unsqueeze(1).expand(-1, len(self.actions)) |
                     (self.stack.pos <= 1).unsqueeze(1).expand(-1, len(self.actions))) &
                     self.la.unsqueeze(0).expand(batch_size, -1))
-      ra_forbid = ((self.stack.pos <= 1).unsqueeze(0).expand(-1, len(self.actions)) & 
+      ra_forbid = ((self.stack.pos <= 1).unsqueeze(0).expand(-1, len(self.actions)) &
                   self.ra.unsqueeze(0).expand(batch_size, -1))
       action_mask = (action_mask & ((la_forbid | ra_forbid) ^ 1))
 
     else:
       logging.fatal("Unimplemented transition system.")
-      raise NotImplementedError 
+      raise NotImplementedError
 
     return action_mask
 
