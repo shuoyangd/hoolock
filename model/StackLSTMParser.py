@@ -1,11 +1,13 @@
 from enum import Enum
 import logging
 import pdb
+import time
 import utils
 import utils.rand
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 # from torch.autograd import Variable
 from model.StackLSTMCell import StackLSTMCell, ReducerLSTMCell
 from model.StateStack import StateStack, StateReducer
@@ -108,6 +110,27 @@ class StackLSTMParser(nn.Module):
     )
     self.root_input = nn.Parameter(torch.rand(options.input_dim))
 
+    self.relations = []
+    self.hard_composition = options.hard_composition
+    self.composition_k = options.composition_k
+    if self.hard_composition or self.composition_k > 0 or \
+       (hasattr(options, "use_relations") and options.use_relations):
+      self.relations.append("NONE")
+      self.a2r = torch.LongTensor(len(self.actions)).type(self.long_dtype)
+      for a_id, action in enumerate(actions):
+        if '|' in action:
+          rel = action.split('|')[1]
+          if rel not in self.relations:
+           rel_id = len(self.relations)
+           self.relations.append(rel)
+          else:
+           rel_id = self.relations.index(rel)
+          self.a2r[a_id] = rel_id
+        else:
+          self.a2r[a_id] = 0
+
+      self.relations.append("NONE")  # reserved for SHIFT or REDUCE
+
     # recurrent components
     # the only reason to have unified h0 and c0 is because pre_buffer and buffer should have the same initial states
     # but due to simplicity we just borrowed this for all three recurrent components (stack, buffer, action)
@@ -118,7 +141,10 @@ class StackLSTMParser(nn.Module):
     if self.transSys == TransitionSystems.ASd:
       self.stack = ReducerLSTMCell(options.input_dim, options.hid_dim, options.dropout_rate, options.stack_size, options.num_lstm_layers, self.h0, self.c0)
       self.buffer = StateStack(options.hid_dim, self.h0)
-      self.token_stack = StateReducer(options.input_dim)
+      if hasattr(options, "use_relations") and options.use_relations:
+        self.token_stack = StateReducer(options.input_dim, relations=self.relations, rel_emb_dim=options.rel_emb_dim)
+      else:
+        self.token_stack = StateReducer(options.input_dim)
       self.token_buffer = StateStack(options.input_dim) # elememtns in this buffer has size input_dim so h0 and c0 won't fit
     else:
       self.stack = StackLSTMCell(options.input_dim, options.hid_dim, options.dropout_rate, options.stack_size, options.num_lstm_layers, self.h0, self.c0)
@@ -126,7 +152,8 @@ class StackLSTMParser(nn.Module):
       self.token_stack = StateStack(options.input_dim)
       self.token_buffer = StateStack(options.input_dim) # elememtns in this buffer has size input_dim so h0 and c0 won't fit
 
-    self.pre_buffer = MultiLayerLSTMCell(input_size=options.input_dim, hidden_size=options.hid_dim, num_layers=options.num_lstm_layers) # FIXME: dropout needs to be implemented manually
+    # self.pre_buffer = MultiLayerLSTMCell(input_size=options.input_dim, hidden_size=options.hid_dim, num_layers=options.num_lstm_layers) # FIXME: dropout needs to be implemented manually
+    self.pre_buffer = nn.RNN(options.input_dim, options.hid_dim, options.num_lstm_layers) # FIXME: dropout needs to be implemented manually
     self.history = MultiLayerLSTMCell(input_size=options.action_emb_dim, hidden_size=options.hid_dim, num_layers=options.num_lstm_layers) # FIXME: dropout needs to be implemented manually
 
     # parser state and softmax
@@ -144,30 +171,12 @@ class StackLSTMParser(nn.Module):
     self.state_to_actions = nn.Linear(options.state_dim, len(actions))
 
     # composition
-    self.hard_composition = options.hard_composition
-    self.composition_k = options.composition_k
-
     if self.hard_composition or self.composition_k > 0:
       self.composition_func = nn.Sequential(
           nn.Linear(self.input_dim * 2 + options.rel_emb_dim, self.input_dim),
           nn.Tanh()
       )
 
-      self.relations = [ "NONE" ]
-      self.a2r = torch.LongTensor(len(self.actions)).type(self.long_dtype)
-      for a_id, action in enumerate(actions):
-        if '|' in action:
-          rel = action.split('|')[1]
-          if rel not in self.relations:
-           rel_id = len(self.relations)
-           self.relations.append(rel)
-          else:
-           rel_id = self.relations.index(rel)
-          self.a2r[a_id] = rel_id
-        else:
-          self.a2r[a_id] = 0
-
-      self.relations.append("NONE")  # reserved for SHIFT or REDUCE
       self.rel_emb = nn.Embedding(len(self.relations), options.rel_emb_dim)
 
     if self.hard_composition:
@@ -212,6 +221,7 @@ class StackLSTMParser(nn.Module):
     :return: output: (output_seq_len, batch_size, len(actions)), or when actions = None, (output_seq_len, batch_size, max_step_length)
     """
 
+    start_time = time.time()
     seq_len = tokens.size()[0]
     batch_size = tokens.size()[1]
     word_emb = self.word_emb(tokens.t()) # (batch_size, seq_len, word_emb_dim)
@@ -228,27 +238,29 @@ class StackLSTMParser(nn.Module):
 
     # initialize stack
     self.stack.build_stack(batch_size, self.gpuid)
+    time1 = time.time()
+    logging.debug("duration 1 is {0}".format(time1 - start_time))
 
     # initialize and preload buffer
-    buffer_hiddens = torch.zeros((seq_len, batch_size, self.hid_dim)).type(self.dtype)
-    buffer_cells = torch.zeros((seq_len, batch_size, self.hid_dim)).type(self.dtype)
-    bh = self.h0.unsqueeze(0).unsqueeze(2).expand(batch_size, self.hid_dim, self.num_lstm_layers)
-    bc = self.c0.unsqueeze(0).unsqueeze(2).expand(batch_size, self.hid_dim, self.num_lstm_layers)
-    for t_i in range(seq_len):
-      bh, bc = self.pre_buffer(token_comp_output_rev[t_i], (bh, bc)) # (batch_size, self.hid_dim, self.num_lstm_layers)
-      buffer_hiddens[t_i, :, :] = bh[:, :, -1]
-      buffer_cells[t_i, :, :] = bc[:, :, -1]
+    b0 = self.h0.unsqueeze(0).unsqueeze(0).expand(self.num_lstm_layers, batch_size, self.hid_dim).contiguous()
+    buffer_hiddens, _ = self.pre_buffer(token_comp_output_rev, b0)
+
+    time2 = time.time()
+    logging.debug("duration 2 is {0}".format(time2 - time1))
 
     self.buffer.build_stack(batch_size, seq_len, buffer_hiddens, tokens_mask, self.gpuid)
     self.token_stack.build_stack(batch_size, self.stack_size, gpuid=self.gpuid)
     self.token_buffer.build_stack(batch_size, seq_len, token_comp_output_rev, tokens_mask, self.gpuid)
     self.stack(self.root_input.unsqueeze(0).expand(batch_size, self.input_dim), torch.ones(batch_size).type(self.long_dtype)) # push root
 
+    time3 = time.time()
+    logging.debug("duration 3 is {0}".format(time3 - time2))
+
     stack_state, _ = self.stack.head() # (batch_size, hid_dim)
     buffer_state = self.buffer.head() # (batch_size, hid_dim)
     token_stack_state = self.token_stack.head()
     token_buffer_state = self.token_buffer.head()
-    stack_input =  token_buffer_state # (batch_size, input_size)
+    stack_input = token_buffer_state # (batch_size, input_size)
     action_state = self.h0.unsqueeze(0).unsqueeze(2).expand(batch_size, self.hid_dim, self.num_lstm_layers) # (batch_size, hid_dim, num_lstm_layers)
     action_cell = self.c0.unsqueeze(0).unsqueeze(2).expand(batch_size, self.hid_dim, self.num_lstm_layers) # (batch_size, hid_dim, num_lstm_layers)
 
@@ -262,6 +274,10 @@ class StackLSTMParser(nn.Module):
     else:
       outputs = torch.zeros((actions.size()[0], batch_size, len(self.actions))).type(self.dtype)
       step_length = actions.size()[0]
+
+    time4 = time.time()
+    logging.debug("duration 4 is {0}".format(time4 - time3))
+
     step_i = 0
     # during decoding, some instances in the batch may terminate earlier than others
     # and we cannot terminate the decoding because one instance terminated
@@ -322,8 +338,11 @@ class StackLSTMParser(nn.Module):
       if self.transSys == TransitionSystems.ASd:
           # for reduce operations, reduced word embeddings should act as input
           # before this, stack_input is the buffer head from the previous timestep (ln 329)
-          token_stack_state, reduced_stack_state = self.token_stack(stack_input, stack_op, dir_)
-          stack_input[(stack_op == -1), :] = reduced_stack_state[(stack_op == -1), :]
+          if self.relations:
+            token_stack_state, reduced_stack_state = self.token_stack(stack_input, stack_op, dir_, self.a2r[action_i])
+          else:
+            token_stack_state, reduced_stack_state = self.token_stack(stack_input, stack_op, dir_)
+            stack_input[(stack_op == -1), :] = reduced_stack_state[(stack_op == -1), :]
       else:
           token_stack_state = self.token_stack(stack_input, stack_op)
 
@@ -335,6 +354,9 @@ class StackLSTMParser(nn.Module):
       action_state, action_cell = self.history(action_input, (action_state, action_cell)) # (batch_size, hid_dim, num_lstm_layers)
 
       step_i += 1
+
+    time5 = time.time()
+    logging.debug("average loop duration is {0}, executed {1} times".format((time5 - time4) / step_i, step_i))
 
     # print("loop terminated.")
     # print("stack size = {0}".format(self.stack.size()))
@@ -452,7 +474,7 @@ class StackLSTMParser(nn.Module):
       la_forbid = (((self.buffer.pos <= 0).unsqueeze(1).expand(-1, len(self.actions)) |
                     (self.stack.pos <= 1).unsqueeze(1).expand(-1, len(self.actions))) &
                     self.la.unsqueeze(0).expand(batch_size, -1))
-      ra_forbid = ((self.stack.pos <= 1).unsqueeze(0).expand(-1, len(self.actions)) &
+      ra_forbid = ((self.stack.pos <= 1).unsqueeze(1).expand(-1, len(self.actions)) &
                   self.ra.unsqueeze(0).expand(batch_size, -1))
       action_mask = (action_mask & ((la_forbid | ra_forbid) ^ 1))
 

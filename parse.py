@@ -1,4 +1,5 @@
 from preprocess import conll_indice_mapping_without_padding
+import model
 
 import torch
 from torch import cuda
@@ -9,7 +10,6 @@ import argparse
 import dill
 import logging
 import os
-import pdb
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)s: %(message)s',
@@ -63,10 +63,13 @@ def main(options):
   if use_pretrained_emb:
     batchized_test_data_pre, _ = utils.tensor.advanced_batchize_no_sort(test_data_pre, options.batch_size, pre_vocab.stoi["<pad>"])
 
-  parser = torch.load(open(options.model_file, 'rb'), map_location=lambda storage, loc: storage)
-  parser.max_step_length = options.max_step_length
-  parser.stack_size = options.stack_size
-  parser.gpuid = options.gpuid
+  parser_state_dict, parser_options = torch.load(open(options.model_file, 'rb'), map_location=lambda storage, loc: storage)
+  parser_options.gpuid = options.gpuid
+  parser = model.StackLSTMParser.StackLSTMParser(vocab, actions, parser_options, pre_vocab=pre_vocab, postags=postags)
+  parser.load_state_dict(parser_state_dict)
+  parser.max_step_length = parser_options.max_step_length
+  parser.stack_size = parser_options.stack_size
+  parser.gpuid = parser_options.gpuid
   if use_cuda:
     parser = parser.cuda()
     parser.stack_action_mapping = parser.stack_action_mapping.cuda()

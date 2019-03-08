@@ -39,7 +39,7 @@ class StateStack(nn.Module):
       self.dtype = torch.FloatTensor
       self.long_dtype = torch.LongTensor
 
-    self.hidden_stack = Variable(torch.zeros(self.seq_len + 2, self.batch_size, self.hidden_size).type(self.dtype))
+    self.hidden_stack = torch.Tensor(self.seq_len + 2, self.batch_size, self.hidden_size).type(self.dtype)
 
     # push start states to the stack
     self.hidden_stack[0, :, :] = self.initial_hidden.expand((self.batch_size, self.hidden_size))
@@ -53,7 +53,7 @@ class StateStack(nn.Module):
     if hidden_masks is not None:
       self.pos = torch.sum(hidden_masks, dim=0).type(self.long_dtype) # note there is a initial state padding
     else:
-      self.pos = Variable(torch.LongTensor([0] * self.batch_size).type(self.long_dtype))
+      self.pos = torch.LongTensor([0] * self.batch_size).type(self.long_dtype)
 
   def forward(self, input, op):
     """
@@ -88,14 +88,21 @@ class StateStack(nn.Module):
 
 class StateReducer(StateStack):
 
-  def __init__(self, hidden_size, init_var=None):
+  def __init__(self, hidden_size, init_var=None, relations=[], rel_emb_dim=16):
     super(StateReducer, self).__init__(hidden_size, init_var)
 
-    self.reducer = nn.Sequential(
-      nn.Linear(self.hidden_size * 2, self.hidden_size),
-      nn.Tanh())
+    if relations:
+      self.rel_emb = nn.Embedding(len(relations), rel_emb_dim)
+      self.reducer = nn.Sequential(
+        nn.Linear(self.hidden_size * 2 + rel_emb_dim, self.hidden_size),
+        nn.Tanh())
+    else:
+      self.rel_emb = None
+      self.reducer = nn.Sequential(
+        nn.Linear(self.hidden_size * 2, self.hidden_size),
+        nn.Tanh())
 
-  def forward(self, input, op, dir_):
+  def forward(self, input, op, dir_, rel=None):
     batch_size = input.size(0)
     batch_indexes = torch.arange(0, batch_size).type(self.long_dtype)
 
@@ -109,17 +116,23 @@ class StateReducer(StateStack):
     is_left_reduce = (op == -1) & (dir_ == 0)
     is_right_reduce = (op == -1) & (dir_ == 1)
     reducing_ret = torch.zeros(batch_size, self.hidden_size).type(self.dtype)
+    if rel is not None:
+        rel_emb = self.rel_emb(rel)  # (batch_size, rel_emb_dim)
+        left_composed = self.reducer(torch.cat([cur_hidden, prev_hidden, rel_emb], dim=1)[is_left_reduce, :])
+        right_composed = self.reducer(torch.cat([prev_hidden, cur_hidden, rel_emb], dim=1)[is_right_reduce, :])
+    else:
+        left_composed = self.reducer(torch.cat([cur_hidden, prev_hidden], dim=1)[is_left_reduce, :])
+        right_composed = self.reducer(torch.cat([prev_hidden, cur_hidden], dim=1)[is_right_reduce, :])
+
     if len(is_left_reduce) != 0:
       left_reduced_indexes = batch_indexes[is_left_reduce]
       left_reduced_pos = (self.pos - 1)[is_left_reduce]
-      left_composed = self.reducer(torch.cat([cur_hidden, prev_hidden], dim=1))[is_left_reduce, :]
       self.hidden_stack[left_reduced_pos, left_reduced_indexes, :] = left_composed
       reducing_ret[is_left_reduce, :] = left_composed
 
     if len(is_right_reduce) != 0:
       right_reduced_indexes = batch_indexes[is_right_reduce]
       right_reduced_pos =  (self.pos - 1)[is_right_reduce]
-      right_composed = self.reducer(torch.cat([prev_hidden, cur_hidden], dim=1))[is_right_reduce, :]
       self.hidden_stack[right_reduced_pos, right_reduced_indexes, :] = right_composed
       reducing_ret[is_right_reduce, :] = right_composed
 
