@@ -175,7 +175,7 @@ class Oracle2CoNLLWriter:
     else:
       raise NotImplementedError
 
-  def writesent(self, lines, ref_lines=None):
+  def writesent(self, lines, ref_lines=None, ref_toks=None):
     """
     This function is (almost) blindly copied from Peng Qi's code, with some modifications:
     https://github.com/qipeng/arc-swift/blob/master/test/test_oracle.py
@@ -203,7 +203,7 @@ class Oracle2CoNLLWriter:
 
     pos = ["" for i in range(Nwords + 1)]
 
-    def output_str(idx, head_idx, relation, ref_lines=None):
+    def output_str(idx, head_idx, relation, ref_lines=None, ref_toks=None):
       if ref_lines:
         ref_line = ref_lines[idx - 1] # output is 1-based, ref_lines is 0-based
         ret = str(ref_line["ID"])
@@ -216,6 +216,8 @@ class Oracle2CoNLLWriter:
         ret += ("\t" + str(relation))
         ret += ("\t" + ref_line["DEPS"])
         ret += ("\t" + ref_line["MISC"])
+      elif ref_toks:
+        ret = "%d\t%s\t%s\t_\t_\t_\t%d\t%s\t_\t_" % (idx, ref_toks[idx-1], ref_toks[idx-1], head_idx, relation) # LinguaView format 
       else:
         ret = "%d\t%d\t%d\t_\t_\t_\t%d\t%s\t_\t_" % (idx, idx, idx, head_idx, relation) # LinguaView format 
 
@@ -236,7 +238,7 @@ class Oracle2CoNLLWriter:
           relation = t[2]
           parent[stack[n]] = j
           # output[stack[n]] = "%d\t%s" % (j, relation)
-          output[stack[n]] = output_str(stack[n], j, relation, ref_lines)
+          output[stack[n]] = output_str(stack[n], j, relation, ref_lines, ref_toks)
           stack = stack[(n + 1):]
         elif t["OP"] == 'Right-Arc':
           # pos[j] = t[3]
@@ -244,7 +246,7 @@ class Oracle2CoNLLWriter:
           relation = t[2]
           parent[j] = stack[n]
           # output[j] = "%d\t%s" % (stack[n], relation)
-          output[j] = output_str(j, stack[n], relation, ref_lines)
+          output[j] = output_str(j, stack[n], relation, ref_lines, ref_toks)
           buf = buf[1:]
           stack = [j] + stack[n:]
         else:
@@ -256,14 +258,14 @@ class Oracle2CoNLLWriter:
           relation = t["DEPREL"]
           parent[stack[0]] = j
           # output[stack[0]] = "%d\t%s" % (j, relation)
-          output[stack[0]] = output_str(stack[0], j, relation, ref_lines)
+          output[stack[0]] = output_str(stack[0], j, relation, ref_lines, ref_toks)
           stack = stack[1:]
         elif t["OP"] == 'Right-Arc':
           # pos[j] = t["UPOSTAG"]
           relation = t["DEPREL"]
           parent[j] = stack[0]
           # output[j] = "%d\t%s" % (stack[0], relation)
-          output[j] = output_str(j, stack[0], relation, ref_lines)
+          output[j] = output_str(j, stack[0], relation, ref_lines, ref_toks)
           buf = buf[1:]
           stack = [j] + stack
         elif t["OP"] == 'Shift':
@@ -277,13 +279,13 @@ class Oracle2CoNLLWriter:
           relation = t["DEPREL"]
           parent[stack[1]] = stack[0]
           # output[stack[1]] = "%d\t%s" % (stack[0], relation)
-          output[stack[1]] = output_str(stack[1], stack[0], relation, ref_lines)
+          output[stack[1]] = output_str(stack[1], stack[0], relation, ref_lines, ref_toks)
           stack = [stack[0]] + stack[2:]
         elif t["OP"] == 'Right-Arc':
           relation = t["DEPREL"]
           parent[stack[0]] = stack[1]
           # output[stack[0]] = "%d\t%s" % (stack[1], relation)
-          output[stack[0]] = output_str(stack[0], stack[1], relation, ref_lines)
+          output[stack[0]] = output_str(stack[0], stack[1], relation, ref_lines, ref_toks)
           stack = stack[1:]
         elif t["OP"] == 'Shift':
           # pos[j] = t[1]
@@ -294,13 +296,13 @@ class Oracle2CoNLLWriter:
           relation = t["DEPREL"]
           parent[stack[0]] = j
           # output[stack[0]] = "%d\t%s" % (j, relation)
-          output[stack[0]] = output_str(stack[0], j, relation, ref_lines)
+          output[stack[0]] = output_str(stack[0], j, relation, ref_lines, ref_toks)
           stack = stack[1:]
         elif t["OP"] == 'Right-Arc':
           relation = t["DEPREL"]
           parent[stack[0]] = stack[1]
           # output[stack[0]] = "%d\t%s" % (stack[1], relation)
-          output[stack[0]] = output_str(stack[0], stack[1], relation, ref_lines)
+          output[stack[0]] = output_str(stack[0], stack[1], relation, ref_lines, ref_toks)
           stack = stack[1:]
         elif t["OP"] == 'Shift':
           # pos[j] = t["UPOSTAG"]
@@ -309,7 +311,7 @@ class Oracle2CoNLLWriter:
 
     for idx, line in enumerate(output):
       if output[idx] == "":
-        output[idx] = output_str(idx, -1, "_", ref_lines)
+        output[idx] = output_str(idx, -1, "_", ref_lines, ref_toks)
 
     self.file.write("%s\n\n" % ("\n".join(output[1:])))
 
