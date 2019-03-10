@@ -60,6 +60,7 @@ class StackLSTMParser(nn.Module):
     self.transSys = TransitionSystems(options.transSys)
     self.exposure_eps = options.exposure_eps
     self.num_lstm_layers = options.num_lstm_layers
+    self.dropout_rate = options.dropout_rate
 
     # gpu
     self.gpuid = options.gpuid
@@ -136,10 +137,9 @@ class StackLSTMParser(nn.Module):
     # but due to simplicity we just borrowed this for all three recurrent components (stack, buffer, action)
     self.h0 = nn.Parameter(torch.rand(options.hid_dim,).type(self.dtype))
     self.c0 = nn.Parameter(torch.rand(options.hid_dim,).type(self.dtype))
-    # FIXME: there is no dropout in StackLSTMCell at this moment
     # BufferLSTM could have 0 or 2 parameters, depending on what is passed for initial hidden and cell state
     if self.transSys == TransitionSystems.ASd:
-      self.stack = ReducerLSTMCell(options.input_dim, options.hid_dim, options.dropout_rate, options.stack_size, options.num_lstm_layers, self.h0, self.c0)
+      self.stack = ReducerLSTMCell(options.input_dim, options.hid_dim, options.stack_size, options.num_lstm_layers, self.h0, self.c0)
       self.buffer = StateStack(options.hid_dim, self.h0)
       if hasattr(options, "use_relations") and options.use_relations:
         self.token_stack = StateReducer(options.input_dim, relations=self.relations, rel_emb_dim=options.rel_emb_dim)
@@ -147,14 +147,14 @@ class StackLSTMParser(nn.Module):
         self.token_stack = StateReducer(options.input_dim)
       self.token_buffer = StateStack(options.input_dim) # elememtns in this buffer has size input_dim so h0 and c0 won't fit
     else:
-      self.stack = StackLSTMCell(options.input_dim, options.hid_dim, options.dropout_rate, options.stack_size, options.num_lstm_layers, self.h0, self.c0)
+      self.stack = StackLSTMCell(options.input_dim, options.hid_dim, options.stack_size, options.num_lstm_layers, self.h0, self.c0)
       self.buffer = StateStack(options.hid_dim, self.h0)
       self.token_stack = StateStack(options.input_dim)
       self.token_buffer = StateStack(options.input_dim) # elememtns in this buffer has size input_dim so h0 and c0 won't fit
 
-    # self.pre_buffer = MultiLayerLSTMCell(input_size=options.input_dim, hidden_size=options.hid_dim, num_layers=options.num_lstm_layers) # FIXME: dropout needs to be implemented manually
-    self.pre_buffer = nn.RNN(options.input_dim, options.hid_dim, options.num_lstm_layers) # FIXME: dropout needs to be implemented manually
-    self.history = MultiLayerLSTMCell(input_size=options.action_emb_dim, hidden_size=options.hid_dim, num_layers=options.num_lstm_layers) # FIXME: dropout needs to be implemented manually
+    # self.pre_buffer = MultiLayerLSTMCell(input_size=options.input_dim, hidden_size=options.hid_dim, num_layers=options.num_lstm_layers)
+    self.pre_buffer = nn.RNN(options.input_dim, options.hid_dim, options.num_lstm_layers)
+    self.history = MultiLayerLSTMCell(input_size=options.action_emb_dim, hidden_size=options.hid_dim, num_layers=options.num_lstm_layers)
 
     # parser state and softmax
     self.use_token_highway = options.use_token_highway
@@ -264,6 +264,13 @@ class StackLSTMParser(nn.Module):
     action_state = self.h0.unsqueeze(0).unsqueeze(2).expand(batch_size, self.hid_dim, self.num_lstm_layers) # (batch_size, hid_dim, num_lstm_layers)
     action_cell = self.c0.unsqueeze(0).unsqueeze(2).expand(batch_size, self.hid_dim, self.num_lstm_layers) # (batch_size, hid_dim, num_lstm_layers)
 
+    # apply dropout when necessary
+    stack_state = F.dropout(stack_state, p=self.dropout_rate, training=self.training)
+    buffer_state = F.dropout(buffer_state, p=self.dropout_rate, training=self.training)
+    token_buffer_state = F.dropout(token_stack_state, p=self.dropout_rate, training=self.training)
+    action_state = F.dropout(action_state, p=self.dropout_rate, training=self.training)
+    action_cell = F.dropout(action_state, p=self.dropout_rate, training=self.training)
+
     # prepare bernoulli probability for exposure indicator
     batch_exposure_prob = torch.Tensor([self.exposure_eps] * batch_size).type(self.dtype)
 
@@ -352,6 +359,13 @@ class StackLSTMParser(nn.Module):
       stack_input = self.token_buffer.head()
       action_input = self.action_emb(action_i) # (batch_size, action_emb_dim)
       action_state, action_cell = self.history(action_input, (action_state, action_cell)) # (batch_size, hid_dim, num_lstm_layers)
+
+      # apply dropout when necessary
+      stack_state = F.dropout(stack_state, p=self.dropout_rate, training=self.training)
+      buffer_state = F.dropout(buffer_state, p=self.dropout_rate, training=self.training)
+      token_buffer_state = F.dropout(token_stack_state, p=self.dropout_rate, training=self.training)
+      action_state = F.dropout(action_state, p=self.dropout_rate, training=self.training)
+      action_cell = F.dropout(action_state, p=self.dropout_rate, training=self.training)
 
       step_i += 1
 
