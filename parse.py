@@ -67,6 +67,7 @@ def main(options):
   parser_options.gpuid = options.gpuid
   parser = model.StackLSTMParser.StackLSTMParser(vocab, actions, parser_options, pre_vocab=pre_vocab, postags=postags)
   parser.load_state_dict(parser_state_dict)
+  parser.training = False  # inference mode
   parser.max_step_length = parser_options.max_step_length
   parser.stack_size = parser_options.stack_size
   parser.gpuid = parser_options.gpuid
