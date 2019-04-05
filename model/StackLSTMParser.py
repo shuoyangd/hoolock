@@ -81,7 +81,7 @@ class StackLSTMParser(nn.Module):
     if pre_vocab is not None:
       self.pre_word_emb = nn.Embedding(pre_vocab.vectors.size(0), pre_vocab.dim)
       # initialzie and fixed
-      self.pre_word_emb.weight = pre_vocab.vectors
+      self.pre_word_emb.weight = nn.Parameter(pre_vocab.vectors)
       self.pre_word_emb.weight.requires_grad = False
     else:
       self.pre_word_emb = None
@@ -111,7 +111,7 @@ class StackLSTMParser(nn.Module):
     self.c0 = nn.Parameter(torch.rand(options.hid_dim,).type(self.dtype))
     # FIXME: there is no dropout in StackLSTMCell at this moment
     # BufferLSTM could have 0 or 2 parameters, depending on what is passed for initial hidden and cell state
-    self.stack = StackLSTMCell(options.input_dim, options.hid_dim, options.dropout_rate, options.stack_size, options.num_lstm_layers, self.h0, self.c0)
+    self.stack = StackLSTMCell(options.input_dim, options.hid_dim, options.stack_size, options.num_lstm_layers, self.h0, self.c0)
     self.buffer = StateStack(options.hid_dim, self.h0)
     self.token_stack = StateStack(options.input_dim)
     self.token_buffer = StateStack(options.input_dim) # elememtns in this buffer has size input_dim so h0 and c0 won't fit
@@ -187,7 +187,7 @@ class StackLSTMParser(nn.Module):
     self.composition_logging_factor = 1000
     self.composition_logging_count = 0
 
-    # use gumbel-softmax 
+    # use gumbel-softmax
     self.st_gumbel_softmax = options.st_gumbel_softmax
 
 

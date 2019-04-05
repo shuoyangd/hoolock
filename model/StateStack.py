@@ -55,6 +55,8 @@ class StateStack(nn.Module):
     else:
       self.pos = Variable(torch.LongTensor([0] * self.batch_size).type(self.long_dtype))
 
+    self.batch_indexes = torch.arange(0, batch_size).type(self.long_dtype)
+
   def forward(self, input, op):
     """
     stack needs to be built before this is called.
@@ -65,10 +67,10 @@ class StateStack(nn.Module):
     """
 
     batch_size = input.size(0)
-    batch_indexes = torch.arange(0, batch_size).type(self.long_dtype)
-    self.hidden_stack[(self.pos + 1).data, batch_indexes, :] = input.clone()
+    self.hidden_stack[(self.pos + 1).data, self.batch_indexes, :] = input.clone()
     self.pos = self.pos + op  # XXX: should NOT use in-place assignment!
-    hidden_ret = self.hidden_stack[self.pos.data, batch_indexes, :]
+    pos = self.pos.unsqueeze(0).unsqueeze(2).expand(1, batch_size, self.hidden_size)
+    hidden_ret = torch.gather(self.hidden_stack, 0, pos).squeeze()
     return hidden_ret
 
     """
@@ -138,8 +140,9 @@ class StateStack(nn.Module):
       return init_var
 
   def head(self):
-    dtype = self.hidden_stack.long().data.type()
-    ret = self.hidden_stack[self.pos.data, torch.arange(0, len(self.pos)).type(dtype), :].clone()
+    batch_size = len(self.pos)
+    pos = self.pos.unsqueeze(0).unsqueeze(2).expand(1, batch_size, self.hidden_size)
+    ret = torch.gather(self.hidden_stack, 0, pos).squeeze()
     return ret
 
   def size(self):

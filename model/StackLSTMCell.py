@@ -5,7 +5,7 @@ from torch import nn
 
 class StackLSTMCell(nn.Module):
 
-  def __init__(self, input_size, hidden_size, dropout_rate, stack_size, num_layers=1,
+  def __init__(self, input_size, hidden_size, stack_size, num_layers=1,
                init_hidden_var=None, init_cell_var=None):
     """
 
@@ -57,6 +57,8 @@ class StackLSTMCell(nn.Module):
     self.hidden_stack[0, :, :, :] = self.initial_hidden.expand((batch_size, self.num_layers, self.hidden_size)).transpose(2, 1)
     self.cell_stack[0, :, :, :] = self.initial_cell.expand((batch_size, self.num_layers, self.hidden_size)).transpose(2, 1)
 
+    self.batch_indexes = torch.arange(0, batch_size).type(self.long_dtype)
+
   def forward(self, input, op):
     """
     stack needs to be built before this is called.
@@ -67,16 +69,17 @@ class StackLSTMCell(nn.Module):
     """
 
     batch_size = input.size(0)
-    batch_indexes = torch.arange(0, batch_size).type(self.long_dtype)
-    cur_hidden, cur_cell = self.hidden_stack[self.pos, batch_indexes, :, :], \
-                           self.cell_stack[self.pos, batch_indexes, :, :]
+    pos = self.pos.unsqueeze(0).unsqueeze(2).unsqueeze(3).expand(1, batch_size, self.hidden_size, self.num_layers)
+    cur_hidden = torch.gather(self.hidden_stack, 0, pos).squeeze()
+    cur_cell = torch.gather(self.cell_stack, 0, pos).squeeze()
     next_hidden, next_cell = self.lstm(input, (cur_hidden, cur_cell))
-    self.hidden_stack[self.pos + 1, batch_indexes, :, :] = next_hidden.clone()
-    self.cell_stack[self.pos + 1, batch_indexes, :, :] = next_cell.clone()
+    self.hidden_stack[self.pos + 1, self.batch_indexes, :, :] = next_hidden.clone()
+    self.cell_stack[self.pos + 1, self.batch_indexes, :, :] = next_cell.clone()
     self.pos = self.pos + op  # XXX: should NOT use in-place assignment!
-    
-    hidden_ret = self.hidden_stack[self.pos, batch_indexes, :, :]
-    cell_ret = self.cell_stack[self.pos, batch_indexes, :, :]
+
+    pos = self.pos.unsqueeze(0).unsqueeze(2).unsqueeze(3).expand(1, batch_size, self.hidden_size, self.num_layers)
+    hidden_ret = torch.gather(self.hidden_stack, 0, pos).squeeze()
+    cell_ret = torch.gather(self.cell_stack, 0, pos).squeeze()
     return hidden_ret[:, :, -1], cell_ret[:, :, -1]
 
   def init_hidden(self, init_var=None):
@@ -92,8 +95,11 @@ class StackLSTMCell(nn.Module):
       return init_var
 
   def head(self):
-    return self.hidden_stack[self.pos, torch.arange(0, len(self.pos)).type(self.long_dtype), :][:, :, -1] ,\
-           self.cell_stack[self.pos, torch.arange(0, len(self.pos)).type(self.long_dtype), :][:, :, -1]
+    batch_size = len(self.pos)
+    pos = self.pos.unsqueeze(0).unsqueeze(2).unsqueeze(3).expand(1, batch_size, self.hidden_size, self.num_layers)
+    hidden_ret = torch.gather(self.hidden_stack, 0, pos).squeeze()[:, :, -1]
+    cell_ret = torch.gather(self.cell_stack, 0, pos).squeeze()[:, :, -1]
+    return hidden_ret, cell_ret
 
   def size(self):
     return torch.max(self.pos + 1)[0].item()

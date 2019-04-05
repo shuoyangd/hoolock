@@ -6,12 +6,14 @@ import torch
 from torch import cuda
 # from torch.autograd import Variable
 from torch.optim.lr_scheduler import LambdaLR, StepLR, ReduceLROnPlateau
+from warmup_scheduler import GradualWarmupScheduler
 
 import argparse
 import dill
 import logging
 import os
 import pdb
+import random
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)s: %(message)s',
@@ -34,6 +36,8 @@ opt_parser.add_argument("--dev_batch_size", default=150, type=int,
                         help="Size of the dev batch. (default=150)")
 opt_parser.add_argument("--gpuid", default=[], nargs='+', type=int,
                         help="ID of gpu device to use. Empty implies cpu usage. (default=[])")
+opt_parser.add_argument("--manual_seed", default=0, type=int,
+                        help="Manual seed for reproducibility. Set to -1 to introduce real randomness. (default=0)")
 
 # parser model definition
 opt_parser.add_argument("--transSys", default=1, type=int,
@@ -76,6 +80,8 @@ opt_parser.add_argument("--st_gumbel_softmax", "-stgs", default=False, action='s
 # optimizer
 opt_parser.add_argument("--epochs", default=20, type=int,
                         help="Epochs through the data.")
+opt_parser.add_argument("--min_lr", default=1e-5, type=float,
+                        help="Stop training when learning rate falls below this threshold. (default=1e-5)")
 opt_parser.add_argument("--optimizer", default="Adam",
                         help="Choice of optimzier: SGD|Adadelta|Adam. (default=Adam)")
 opt_parser.add_argument("--learning_rate", "-lr", default=1e-3, type=float,
@@ -90,6 +96,11 @@ opt_parser.add_argument("--lr_decay", default="Dyer",
                         help="Learning rate decay scheduler: Dyer|ExponentialLR|ReduceLROnPLateau|None. Dyer means the scheduler used in (Dyer et al. 2015). (default=Dyer)")
 opt_parser.add_argument("--lr_decay_factor", default=0.1, type=float,
                         help="Decay factor of the learning rate. (default=0.1)")
+opt_parser.add_argument("--warmup_init_lr", default=0.001, type=float,
+                        help="The initial learning rate before warmup. (default=0.001)")
+opt_parser.add_argument("--warmup_epochs", default=5, type=int,
+                        help="Epochs of warmup you want to use. Set to 0 if you don't want warmup. (default=5)")
+
 
 def main(options):
 
@@ -98,6 +109,12 @@ def main(options):
     cuda.set_device(options.gpuid[0])
     occupy = torch.rand(1) # occupy gpu asap
     occupy.cuda()
+
+  if options.manual_seed != -1:
+    torch.manual_seed(options.manual_seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    random.seed(options.manual_seed)
 
   train_data, train_postag, train_action = torch.load(open(options.data_file + ".train", 'rb'), pickle_module=dill)
   dev_data, dev_postag, dev_action = torch.load(open(options.data_file + ".dev", 'rb'), pickle_module=dill)
@@ -154,13 +171,22 @@ def main(options):
   # loss = torch.nn.CrossEntropyLoss()
   # loss = model.Loss.NLLLoss(options.gpuid)
   loss = torch.nn.NLLLoss()
-  optimizer = eval("torch.optim." + options.optimizer)(filter(lambda param: param.requires_grad, parser.parameters()), options.learning_rate, weight_decay=options.l2_norm)
-  if options.lr_decay == "None":
-    scheduler = None
-  elif options.lr_decay == "Dyer":
-    scheduler = LambdaLR(optimizer, lambda t: 1.0 / (1 + options.lr_decay_factor * t))
+  if options.warmup_epochs == 0:
+    optimizer = eval("torch.optim." + options.optimizer)(filter(lambda param: param.requires_grad, parser.parameters()), options.learning_rate, weight_decay=options.l2_norm)
   else:
-    scheduler = eval(options.lr_decay)(optimizer, 'min', options.lr_decay_factor, patience=0)
+    optimizer = eval("torch.optim." + options.optimizer)(filter(lambda param: param.requires_grad, parser.parameters()), options.warmup_init_lr, weight_decay=options.l2_norm)
+
+  if options.lr_decay == "None":
+    base_scheduler = None
+  elif options.lr_decay == "Dyer":
+    base_scheduler = LambdaLR(optimizer, lambda t: 1.0 / (1 + options.lr_decay_factor * t))
+  else:
+    base_scheduler = eval(options.lr_decay)(optimizer, 'min', options.lr_decay_factor, patience=0)
+
+  if base_scheduler is None or options.warmup_epochs == 0:
+    scheduler = base_scheduler
+  else:
+    scheduler = GradualWarmupScheduler(optimizer, multiplier=options.learning_rate / options.warmup_init_lr, total_epoch=options.warmup_epochs, after_scheduler=base_scheduler)
 
 
   def replace_singletons(batch, singletons, unk_idx):
@@ -186,9 +212,15 @@ def main(options):
   # main training loop
   for epoch_i in range(options.epochs):
 
-    dev_loss = float('inf')
+    if optimizer.param_groups[0]['lr'] < options.min_lr and epoch_i > options.warmup_epochs:
+      logging.info("Training finished at epoch {0} because the learning rate {1} is smaller than minimum {2}.".format( \
+          epoch_i-1, optimizer.param_groups[0]['lr'], options.min_lr \
+        ) \
+      )
+      break
+
     logging.info("At {0} epoch.".format(epoch_i))
-    if type(scheduler) != ReduceLROnPlateau:
+    if type(base_scheduler) != ReduceLROnPlateau:
       scheduler.step()
       logging.info("Current learning rate {0}".format(optimizer.param_groups[0]['lr']))
 
@@ -326,8 +358,8 @@ def main(options):
                pickle_module=dill)
     logging.info("Done.")
 
-    if type(scheduler) == ReduceLROnPlateau:
-      scheduler.step(dev_loss)
+    if type(base_scheduler) == ReduceLROnPlateau:
+      scheduler.step(metrics=dev_loss)
       logging.info("Current learning rate {0}".format(optimizer.param_groups[0]['lr']))
 
 
