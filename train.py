@@ -30,7 +30,7 @@ opt_parser.add_argument("--data_file", required=True,
                         help="Preprocessed training data.")
 opt_parser.add_argument("--model_file", required=True,
                         help="Path where model should be saved.")
-opt_parser.add_argument("--batch_size", default=80, type=int,
+opt_parser.add_argument("--batch_size", default=128, type=int,
                         help="Size of the training batch. (default=80)")
 opt_parser.add_argument("--dev_batch_size", default=150, type=int,
                         help="Size of the dev batch. (default=150)")
@@ -40,21 +40,19 @@ opt_parser.add_argument("--manual_seed", default=0, type=int,
                         help="Manual seed for reproducibility. Set to -1 to introduce real randomness. (default=0)")
 
 # parser model definition
-opt_parser.add_argument("--transSys", default=1, type=int,
+opt_parser.add_argument("--transSys", default=3, type=int,
                         help="Choice of transition system: 0 for ASd, 1 for AER, 2 for AES, 3 for AH. (default=1)")
 opt_parser.add_argument("--word_emb_dim", default=32, type=int,
                         help="Size of updated word embedding. (default=32)")
 opt_parser.add_argument("--postag_emb_dim", default=12, type=int,
                         help="Size of the POS tag embedding. (default=12)")
-opt_parser.add_argument("--action_emb_dim", default=16, type=int,
+opt_parser.add_argument("--action_emb_dim", default=48, type=int,
                         help="Size of the transition action embedding. (default=16)")
-opt_parser.add_argument("--rel_emb_dim", default=16, type=int,
-                        help="Size of the dependency relation embedding used for composition function. (default=16)")
-opt_parser.add_argument("--hid_dim", default=100, type=int,
+opt_parser.add_argument("--hid_dim", default=200, type=int,
                         help="Size of the LSTM hidden embedding. (default=100)")
 opt_parser.add_argument("--input_dim", default=60, type=int,
                         help="Size of the token composition embedding. (default=60)")
-opt_parser.add_argument("--state_dim", default=20, type=int,
+opt_parser.add_argument("--state_dim", default=200, type=int,
                         help="Size of the parser state pointer (p_t). (default=20)")
 opt_parser.add_argument("--dropout_rate", default=0.0, type=float,
                         help="Dropout rate of the LSTM and stack LSTM components. (default=0.0)")
@@ -67,37 +65,28 @@ opt_parser.add_argument("--exposure_eps", default=1.0, type=float,
                              "the golden transition operations during training.")
 opt_parser.add_argument("--num_lstm_layers", default=2, type=int,
                         help="Number of StackLSTM and buffer-side LSTM layers. (default=2)")
-opt_parser.add_argument("--use_token_highway", default=False, action='store_true',
-                        help="Use the highway connection between composed word embedding and parser state summary. (default=False)")
-opt_parser.add_argument("--hard_composition", default=False, action='store_true',
-                        help="Use the hacky hard composition that tries to approximate Dyer et al. 2015. (default=False)")
-opt_parser.add_argument("--composition_k", default=0, type=int,
-                        help="k-value for composition on the token embeddings. 0 means no composition would happen. (default=0)")
-opt_parser.add_argument("--st_gumbel_softmax", "-stgs", default=False, action='store_true',
-                        help="Use ST Gumbel-Softmax loss instead of normal softmax. (default=False)")
-
 
 # optimizer
-opt_parser.add_argument("--epochs", default=20, type=int,
-                        help="Epochs through the data.")
+opt_parser.add_argument("--epochs", default=30, type=int,
+                        help="Epochs through the data. (default=30)")
 opt_parser.add_argument("--min_lr", default=1e-5, type=float,
                         help="Stop training when learning rate falls below this threshold. (default=1e-5)")
 opt_parser.add_argument("--optimizer", default="Adam",
                         help="Choice of optimzier: SGD|Adadelta|Adam. (default=Adam)")
-opt_parser.add_argument("--learning_rate", "-lr", default=1e-3, type=float,
-                        help="Learning rate used across all optimizers. (default=1e-3)")
+opt_parser.add_argument("--learning_rate", "-lr", default=0.02, type=float,
+                        help="Learning rate used across all optimizers. (default=0.02)")
 opt_parser.add_argument("--momentum", default=0.0, type=float,
                         help="Momentum for SGD. (default=0.0)")
 opt_parser.add_argument("--grad_clip", default=-1.0, type=float,
                         help="Gradient clipping bound. Pass any negative number to disable this functionality. (default=-1.0)")
 opt_parser.add_argument("--l2_norm", default=1e-6, type=float,
                         help="L2 norm coefficient to the loss function. (default=1e-6)")
-opt_parser.add_argument("--lr_decay", default="Dyer",
-                        help="Learning rate decay scheduler: Dyer|ExponentialLR|ReduceLROnPLateau|None. Dyer means the scheduler used in (Dyer et al. 2015). (default=Dyer)")
-opt_parser.add_argument("--lr_decay_factor", default=0.1, type=float,
-                        help="Decay factor of the learning rate. (default=0.1)")
-opt_parser.add_argument("--warmup_init_lr", default=0.001, type=float,
-                        help="The initial learning rate before warmup. (default=0.001)")
+opt_parser.add_argument("--lr_decay", default="ReduceLROnPLateau",
+                        help="Learning rate decay scheduler: Dyer|ExponentialLR|ReduceLROnPLateau|None. Dyer means the scheduler used in (Dyer et al. 2015). (default=ReduceLROnPLateau)")
+opt_parser.add_argument("--lr_decay_factor", default=0.5, type=float,
+                        help="Decay factor of the learning rate. (default=0.5)")
+opt_parser.add_argument("--warmup_init_lr", default=5e-4, type=float,
+                        help="The initial learning rate before warmup. (default=5e-4)")
 opt_parser.add_argument("--warmup_epochs", default=5, type=int,
                         help="Epochs of warmup you want to use. Set to 0 if you don't want warmup. (default=5)")
 
@@ -225,7 +214,6 @@ def main(options):
       logging.info("Current learning rate {0}".format(optimizer.param_groups[0]['lr']))
 
     for i, batch_i in enumerate(utils.rand.srange(len(batchized_train_data))):
-    # for i, batch_i in enumerate(range(len(batchized_train_data) - 1, 0, -1)):
       logging.debug("{0} batch updates calculated, with batch {1}.".format(i, batch_i))
       train_data_batch = replace_singletons(batchized_train_data[batch_i], singletons, vocab.stoi["<unk>"])
       train_data_mask_batch = batchized_train_data_mask[batch_i] # (seq_len, batch_size) with dynamic seq_len
@@ -249,7 +237,6 @@ def main(options):
 
       output_batch = parser(train_data_batch, train_data_mask_batch, train_data_pre_batch, train_postag_batch, train_action_batch) # (seq_len, batch_size, len(actions)) with dynamic seq_len
       output_batch = output_batch.view(-1, len(actions)) # (seq_len * batch_size, len(actions))
-      # train_action_batch_archiv = train_action_batch.clone()
       train_action_batch = train_action_batch.view(-1) # (seq_len * batch_size)
       train_action_mask_batch = train_action_mask_batch.view(-1) # (seq_len * batch_size)
       output_batch = output_batch.masked_select(train_action_mask_batch.unsqueeze(1).expand(len(train_action_mask_batch), len(actions))).view(-1, len(actions))
@@ -259,29 +246,9 @@ def main(options):
       optimizer.zero_grad()
       loss_output.backward()
 
-      """
-      for param in parser.parameters():
-        if param.norm().data[0] > 1e3:
-          logging.debug("big parameter value with shape {0}".format(param.size()))
-        if param.grad is not None and param.grad.norm().data[0] > 1e3:
-          logging.debug("big grad value with shape {0}".format(param.size()))
-        elif param.grad is None:
-          logging.debug("a parameter with shape {0} does not have gradient".format(param.size()))
-        if param.norm().data[0] != param.norm().data[0]:
-          logging.debug("inf value with shape {0}".format(param.size()))
-      """
-
       if options.grad_clip > 0.0:
         torch.nn.utils.clip_grad_norm(parser.parameters(), options.grad_clip)
       optimizer.step()
-
-      """
-      train_action_batch = Variable(batchized_train_action[batch_i]) # (seq_len, batch_size) with dynamic seq_len
-      post_output_batch = parser(train_data_batch, train_postag_batch, train_action_batch)  # (seq_len, batch_size, len(actions)) with dynamic seq_len
-      post_output_batch = post_output_batch.view(-1, len(actions))
-      train_action_batch = train_action_batch.view(-1)
-      post_loss_output = loss(post_output_batch, train_action_batch)
-      """
 
       logging.debug(loss_output.item())
       _, pred = output_batch.max(dim=1)
@@ -290,16 +257,6 @@ def main(options):
       u_train_action_batch = map(lambda x: la2ua[x], train_action_batch.tolist())
       hit = sum(map(lambda x: 1 if x[0] == x[1] else 0, zip(u_pred, u_train_action_batch)))
       logging.debug("pred accuracy: {0}".format(hit / len(output_batch)))
-      # train_action_batch = train_action_batch_archiv
-      # logging.debug("pred: {0}".format(pred))
-      # logging.debug("gold: {0}".format(train_action_batch))
-
-      """
-      logging.debug(post_loss_output)
-      _, post_pred = post_output_batch.max(dim=1)
-      hit = sum(map(lambda x: 1 if x[0] == x[1] else 0, zip(post_pred.data.tolist(), train_action_batch.data.tolist())))
-      logging.debug("post pred accuracy: {0}".format(hit / len(post_output_batch)))
-      """
 
       # minimize pytorch memory usage
       del train_data_batch
@@ -341,16 +298,7 @@ def main(options):
       batch_dev_loss = loss(output_batch, dev_action_batch)
       dev_loss += batch_dev_loss.item()
 
-      # minimize pytorch memory usage
-      # del dev_data_batch
-      # del dev_data_mask_batch
-      # del dev_postag_batch
-      # del dev_action_batch
-      # if use_pretrained_emb:
-      #   del dev_data_pre_batch
-
     logging.info("End of {0} epoch: ".format(epoch_i))
-    # logging.info("Training loss: {0}".format(loss_output[0].item()))
     logging.info("Dev loss: {0}".format(dev_loss))
 
     logging.info("Saving model...")

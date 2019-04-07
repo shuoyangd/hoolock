@@ -119,76 +119,11 @@ class StackLSTMParser(nn.Module):
     self.history = MultiLayerLSTMCell(input_size=options.action_emb_dim, hidden_size=options.hid_dim, num_layers=options.num_lstm_layers) # FIXME: dropout needs to be implemented manually
 
     # parser state and softmax
-    self.use_token_highway = options.use_token_highway
-    if options.use_token_highway:
-      self.summarize_states = nn.Sequential(
-          nn.Linear(3 * options.hid_dim + 2 * options.input_dim, options.state_dim),
-          nn.ReLU()
-      )
-    else:
-      self.summarize_states = nn.Sequential(
-          nn.Linear(3 * options.hid_dim, options.state_dim),
-          nn.ReLU()
-      )
+    self.summarize_states = nn.Sequential(
+        nn.Linear(3 * options.hid_dim, options.state_dim),
+        nn.ReLU()
+    )
     self.state_to_actions = nn.Linear(options.state_dim, len(actions))
-
-    # composition
-    self.hard_composition = options.hard_composition
-    self.composition_k = options.composition_k
-
-    if self.hard_composition or self.composition_k > 0:
-      self.composition_func = nn.Sequential(
-          nn.Linear(self.input_dim * 2 + options.rel_emb_dim, self.input_dim),
-          nn.Tanh()
-      )
-
-      self.relations = [ "NONE" ]
-      self.a2r = torch.LongTensor(len(self.actions)).type(self.long_dtype)
-      for a_id, action in enumerate(actions):
-        if '|' in action:
-          rel = action.split('|')[1]
-          if rel not in self.relations:
-           rel_id = len(self.relations)
-           self.relations.append(rel)
-          else:
-           rel_id = self.relations.index(rel)
-          self.a2r[a_id] = rel_id
-        else:
-          self.a2r[a_id] = 0
-
-      self.relations.append("NONE")  # reserved for SHIFT or REDUCE
-      self.rel_emb = nn.Embedding(len(self.relations), options.rel_emb_dim)
-
-    if self.hard_composition:
-      if self.transSys == TransitionSystems.AER:
-        self.composition_k = 1
-      elif self.transSys == TransitionSystems.AH:
-        self.composition_k = 2
-      else:
-        raise NotImplementedError
-
-      self.composition_attn_h = torch.zeros(len(self.actions), self.composition_k * 2).tolist()
-      self.composition_attn_d = torch.zeros(len(self.actions), self.composition_k * 2).tolist()
-      self.composition_attn_b = torch.zeros(len(self.actions), self.composition_k * 2).tolist()
-
-      self.set_hard_composition_mappings()
-
-      self.composition_attn_h = torch.FloatTensor(self.composition_attn_h).type(self.dtype)
-      self.composition_attn_d = torch.FloatTensor(self.composition_attn_d).type(self.dtype)
-      self.composition_attn_b = torch.FloatTensor(self.composition_attn_b).type(self.dtype)
-
-    elif self.composition_k > 0:
-      self.W_h = nn.Bilinear(options.action_emb_dim, self.input_dim, 1, bias=False)
-      self.W_d = nn.Bilinear(options.action_emb_dim, self.input_dim, 1, bias=False)
-      self.W_b = nn.Bilinear(options.action_emb_dim, self.input_dim, 1, bias=False)
-
-    self.softmax = nn.LogSoftmax(dim=-1) # LogSoftmax works on final dimension only for two dimension tensors. Be careful.
-
-    self.composition_logging_factor = 1000
-    self.composition_logging_count = 0
-
-    # use gumbel-softmax
-    self.st_gumbel_softmax = options.st_gumbel_softmax
 
 
   def forward(self, tokens, tokens_mask, pre_tokens=None, postags=None, actions=None):
@@ -256,22 +191,13 @@ class StackLSTMParser(nn.Module):
     # and we cannot terminate the decoding because one instance terminated
     while step_i < step_length:
       # get action decisions
-      if self.use_token_highway:
-        summary = self.summarize_states(torch.cat((stack_state, token_stack_state, buffer_state, token_buffer_state, action_state[:, :, -1]), dim=1))
-      else:
-        summary = self.summarize_states(torch.cat((stack_state, buffer_state, action_state[:, :, -1]), dim=1)) # (batch_size, self.state_dim)
-      if self.st_gumbel_softmax:
-        action_dist = utils.rand.gumbel_softmax_sample(self.state_to_actions(summary)) # (batch_size, len(actions))
-      else:
-        action_dist = self.softmax(self.state_to_actions(summary)) # (batch_size, len(actions))
+      summary = self.summarize_states(torch.cat((stack_state, buffer_state, action_state[:, :, -1]), dim=1)) # (batch_size, self.state_dim)
+      action_dist = self.softmax(self.state_to_actions(summary)) # (batch_size, len(actions))
       outputs[step_i, :, :] = action_dist.clone()
 
       # get rid of forbidden actions (only for decoding)
       if actions is None or self.exposure_eps < 1.0:
         forbidden_actions = self.get_valid_actions(batch_size) ^ 1
-        # print("stack size = {0}".format(self.stack.size()))
-        # print("buffer size = {0}".format(self.buffer.size()))
-        # print("forbidden actions = {0}".format(torch.sum(forbidden_actions, dim=1).tolist()))
         num_forbidden_actions = torch.sum(forbidden_actions, dim=1)
         # if all actions except <pad> and <unk> are forbidden for all sentences in the batch,
         # there is no sense continue decoding.
@@ -291,20 +217,6 @@ class StackLSTMParser(nn.Module):
       stack_op = self.stack_action_mapping.index_select(0, action_i)
       buffer_op = self.buffer_action_mapping.index_select(0, action_i)
 
-      # check boundary conditions, assuming buffer won't be pushed anymore
-      # this should be controlled by the valid action above
-      # stack_pop_boundary = Variable((self.stack.pos == 0).data & (stack_op == -1).data)
-      # stack_push_boundary = Variable((self.stack.pos >= self.stack_size).data & (stack_op == 1).data)
-      # buffer_pop_boundary = Variable((self.buffer.pos ==0).data & (buffer_op == -1).data)
-
-      # if stack/buffer is at boundary, hold at current position rather than push/pop
-      # stack_op = stack_op.masked_fill(stack_pop_boundary, 0)
-      # stack_op = stack_op.masked_fill(stack_push_boundary, 0)
-      # buffer_op = buffer_op.masked_fill(buffer_pop_boundary, 0)
-
-      # update stack, buffer and action state
-      if self.hard_composition or self.composition_k > 0:
-        self.token_composition(action_i, self.composition_k)  # not sure if token composition should happen before or after stack/buffer op, but let's try this
       stack_state, _ = self.stack(stack_input, stack_op)
       buffer_state = self.buffer(stack_state, buffer_op) # actually nothing will be pushed
       token_stack_state = self.token_stack(stack_input, stack_op)
@@ -315,90 +227,7 @@ class StackLSTMParser(nn.Module):
 
       step_i += 1
 
-    # print("loop terminated.")
-    # print("stack size = {0}".format(self.stack.size()))
-    # print("buffer size = {0}".format(self.buffer.size()))
-    # print("forbidden actions = {0}".format(torch.sum(forbidden_actions, dim=1).tolist()))
-
     return outputs
-
-
-  def token_composition(self, action_ids, k):
-    rel_ids = self.a2r[action_ids]  # XXX: gradient won't propagate through this
-    batch_size = len(action_ids)
-    emb_size = self.action_emb.embedding_dim
-
-    action_emb = self.action_emb(action_ids).unsqueeze(1).expand(-1, k * 2, -1)  # (batch_size, k * 2, action_emb_size)
-    active_token_emb = torch.Tensor(batch_size, k * 2, self.input_dim).type(self.dtype)  # (batch_size, k * 2, input_dim)
-    stack_pos = self.token_stack.pos.unsqueeze(0).expand(k, -1).clone()  # (k, batch_size)
-    buffer_pos = self.token_buffer.pos.unsqueeze(0).expand(k, -1).clone()  # (k, batch_size)
-    for kk in range(k):
-      stack_pos[kk] -= kk
-      buffer_pos[kk] -= kk
-    stack_pos_mask = (stack_pos < 0)  # (k, batch_size)
-    buffer_pos_mask = (buffer_pos < 0)  # (k, batch_size)
-    pos_mask = torch.cat((stack_pos_mask, buffer_pos_mask), dim=0).t()  # (batch_size, k * 2)
-
-    stack_pos[(stack_pos < 0)] = 0
-    buffer_pos[(buffer_pos < 0)] = 0
-    active_token_emb[:, 0:k, :] = \
-      self.token_stack.hidden_stack[ stack_pos, torch.arange(0, batch_size).unsqueeze(0).expand(k, -1).type(self.long_dtype), :].permute(1, 0, 2)  # (batch_size, k, input_dim)
-    active_token_emb[:, k:k*2, :] = \
-      self.token_buffer.hidden_stack[ buffer_pos, torch.arange(0, batch_size).unsqueeze(0).expand(k, -1).type(self.long_dtype), :].permute(1, 0, 2)  # (batch_size, k, input_dim)
-
-    # calculate attention weights
-    if self.hard_composition:
-      alpha_h = self.composition_attn_h[action_ids, :]
-      alpha_d = self.composition_attn_d[action_ids, :]
-      alpha_b = self.composition_attn_b[action_ids, :]
-    else:
-      alpha_h = self.W_h(action_emb.contiguous().view(-1, emb_size), active_token_emb.contiguous().view(-1, self.input_dim))  # (batch_size * k * 2)
-      alpha_d = self.W_d(action_emb.contiguous().view(-1, emb_size), active_token_emb.contiguous().view(-1, self.input_dim))
-      alpha_b = self.W_b(action_emb.contiguous().view(-1, emb_size), active_token_emb.contiguous().view(-1, self.input_dim))
-
-      alpha_h = alpha_h.view(batch_size, -1)  # (batch_size, k * 2)
-      alpha_d = alpha_d.view(batch_size, -1)  # (batch_size, k * 2)
-      alpha_b = alpha_b.view(batch_size, -1)  # (batch_size, k * 2)
-
-      alpha_h = torch.nn.functional.softmax(alpha_h)
-      alpha_d = torch.nn.functional.softmax(alpha_d)
-      alpha_b = torch.nn.functional.sigmoid(alpha_b)
-
-    # the masked positions should not be considered as valid
-    alpha_h[pos_mask] = 0
-    alpha_d[pos_mask] = 0
-    alpha_b[pos_mask] = 0
-
-    if torch.sum(alpha_h).item() != torch.sum(alpha_h).item():
-      pdb.set_trace()
-
-    if torch.sum(alpha_d).item() != torch.sum(alpha_d).item():
-      pdb.set_trace()
-
-    if torch.sum(alpha_b).item() != torch.sum(alpha_b).item():
-      pdb.set_trace()
-
-    self.composition_logging_count += 1
-    if self.composition_logging_count % self.composition_logging_factor == 0:
-      logging.info("sample action: {0}".format(self.actions[action_ids[0].item()]))
-      logging.info("head attention value sample: {0}".format(alpha_h[0, :].tolist()))
-      logging.info("dependency attention value sample: {0}".format(alpha_d[0, :].tolist()))
-      logging.info("writing head weights value sample; {0}".format(alpha_b[0, :].tolist()))
-
-    # use weighted sum to get attentional h, d, and r
-    h = torch.sum(active_token_emb.permute(2, 0, 1) * alpha_h, dim=2).t()  # (input_dim, batch_size, k*2) * (batch_size, k * 2) -> sum dim2 -> transpose -> (batch_size, input_dim)
-    d = torch.sum(active_token_emb.permute(2, 0, 1) * alpha_d, dim=2).t()  # (input_dim, batch_size, k*2) * (batch_size, k * 2) -> sum dim2 -> transpose -> (batch_size, input_dim)
-    r = self.rel_emb(rel_ids)  # (batch_size, rel_dim)
-
-    # compose
-    c = self.composition_func(torch.cat([h, d, r], dim=1))  # (batch_size, input_dim)
-    c = c.unsqueeze(0).expand(k, -1, -1)  # (k, batch_size, input_dim)
-
-    # c does not need to be summed over the k dimension because they'll be written to different units of stack / buffer
-    stack_elements = self.token_stack.hidden_stack[stack_pos, torch.arange(0, stack_pos.size(1)).type(self.long_dtype), :]
-    buffer_elements = self.token_buffer.hidden_stack[buffer_pos, torch.arange(0, buffer_pos.size(1)).type(self.long_dtype), :]
-    self.token_stack.hidden_stack[stack_pos, torch.arange(0, stack_pos.size(1)).type(self.long_dtype), :] = (stack_elements.permute(2, 1, 0) * (1 - alpha_b[:, 0:k])).permute(2, 1, 0) + (c.permute(2, 1, 0) * alpha_b[:, 0:k]).permute(2, 1, 0)  # (input_dim, batch_size, k) * (batch_size, k) -> permute -> (k, batch_size, input_dim)
-    self.token_buffer.hidden_stack[buffer_pos, torch.arange(0, buffer_pos.size(1)).type(self.long_dtype), :] = (buffer_elements.permute(2, 1, 0) * (1 - alpha_b[:, k:2*k])).permute(2, 1, 0) + (c.permute(2, 1, 0) * alpha_b[:, k:2*k]).permute(2, 1, 0)  # (input_dim, batch_size, k) * (batch_size, k) -> permute -> (k, batch_size, input_dim)
 
 
   def get_valid_actions(self, batch_size):
@@ -435,22 +264,6 @@ class StackLSTMParser(nn.Module):
         self.stack_action_mapping[idx], self.buffer_action_mapping[idx] = AER_map.get(transition, (0, 0))
       elif self.transSys == TransitionSystems.AH:
         self.stack_action_mapping[idx], self.buffer_action_mapping[idx] = AH_map.get(transition, (0, 0))
-      else:
-        logging.fatal("Unimplemented transition system.")
-        raise NotImplementedError
-
-
-  def set_hard_composition_mappings(self):
-    for idx, astr in enumerate(self.actions):
-      transition = astr.split('|')[0]
-
-      # If the action is unknown, read/write attention weights should all be 0
-      if self.transSys == TransitionSystems.AER:
-        self.composition_attn_h[idx], self.composition_attn_d[idx], self.composition_attn_b[idx] = \
-          AER_hard_composition_map.get(transition, ([0] * self.composition_k * 2, [0] * self.composition_k * 2, [0] * self.composition_k * 2))
-      if self.transSys == TransitionSystems.AH:
-        self.composition_attn_h[idx], self.composition_attn_d[idx], self.composition_attn_b[idx] = \
-          AH_hard_composition_map.get(transition, ([0] * self.composition_k * 2, [0] * self.composition_k * 2, [0] * self.composition_k * 2))
       else:
         logging.fatal("Unimplemented transition system.")
         raise NotImplementedError
