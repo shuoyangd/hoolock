@@ -7,15 +7,11 @@ hoolock is a Pytorch-based, GPU-friendly StackLSTM implementation that makes it 
 You can install all python dependencies by calling `pip install -r requirements.txt`. For others, you only have to download them.
 
 - Python 3.6
-
-
 - [dill](https://pypi.org/project/dill)
 - [PyTorch v1.0.0](https://pytorch.org): any version after v0.4 should work, but we enforce version to eliminate randomness
 - [pytorch-gradual-warmup-lr](https://github.com/shuoyangd/pytorch-gradual-warmup-lr)
 - [six](https://pypi.org/project/six/)
 - [torchtext v0.2.1](https://github.com/pytorch/text/releases/tag/v0.2.1): later versions may also work, but not tested
-
-
 - [arc-swift](https://github.com/qipeng/arc-swift): only for data pre and post-processing
 - [Stanford POS Tagger](https://nlp.stanford.edu/software/tagger.shtml): optional, just for reproducing the results in the paper
 
