@@ -47,13 +47,13 @@ opt_parser.add_argument("--word_emb_dim", default=32, type=int,
 opt_parser.add_argument("--postag_emb_dim", default=12, type=int,
                         help="Size of the POS tag embedding. (default=12)")
 opt_parser.add_argument("--action_emb_dim", default=48, type=int,
-                        help="Size of the transition action embedding. (default=16)")
+                        help="Size of the transition action embedding. (default=48)")
 opt_parser.add_argument("--hid_dim", default=200, type=int,
-                        help="Size of the LSTM hidden embedding. (default=100)")
+                        help="Size of the LSTM hidden embedding. (default=200)")
 opt_parser.add_argument("--input_dim", default=60, type=int,
                         help="Size of the token composition embedding. (default=60)")
 opt_parser.add_argument("--state_dim", default=200, type=int,
-                        help="Size of the parser state pointer (p_t). (default=20)")
+                        help="Size of the parser state pointer (p_t). (default=200)")
 opt_parser.add_argument("--dropout_rate", default=0.0, type=float,
                         help="Dropout rate of the LSTM and stack LSTM components. (default=0.0)")
 opt_parser.add_argument("--stack_size", default=100, type=int,
@@ -62,7 +62,7 @@ opt_parser.add_argument("--max_step_length", default=150, type=int,
                         help="Maximum step length allowed for decoding. (default=150)")
 opt_parser.add_argument("--exposure_eps", default=1.0, type=float,
                         help="The fraction of timesteps where the parser has exposure to" +
-                             "the golden transition operations during training.")
+                             "the golden transition operations during training. (default=1.0)")
 opt_parser.add_argument("--num_lstm_layers", default=2, type=int,
                         help="Number of StackLSTM and buffer-side LSTM layers. (default=2)")
 
