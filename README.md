@@ -26,7 +26,13 @@ This short tutorial aims to help you reproduce result in the paper, which is on 
 
 Follow the instructions in [arc-swift](https://github.com/qipeng/arc-swift) to run the initial preprocessing on Penn Treebank. Their script will create standard data split on PTB, filter non-projective trees in training data, and generate oracle transition sequence. We will assume your preprocessed data (preprocessed conllx and oracle sequences) are all stored in a single directory referred to as `${data_dir}`.
 
-Setup [Stanford POS Tagger](https://nlp.stanford.edu/software/tagger.shtml) and run `scripts/postag.sh ${data_dir}/ptb3-wsj-[train|dev|dev.proj|test].conllx` to generate data with Stanford POSTags. Your data is going to be stored in `$PWD/data/postags`
+Setup [Stanford POS Tagger](https://nlp.stanford.edu/software/tagger.shtml) and run
+
+```
+bash scripts/postag.sh ${data_dir}/ptb3-wsj-[train|dev|dev.proj|test].conllx
+```
+
+to generate data with Stanford POSTags. Your data is going to be stored in `$PWD/data/postags`
 
 You'll also need a special word embedding used in Dyer et al. 2015 which you can download [here](https://drive.google.com/file/d/0B8nESzOdPhLsdWF2S1Ayb1RkTXc/view?usp=sharing).
 
@@ -34,7 +40,13 @@ The last step is to build vocabulary, integerize everything and dump them as a b
 
 ```
 mkdir -p binarized
-python preprocess.py --train_conll_file $PWD/data/postags/ptb3-wsj-train.conllx.pos --train_oracle_file ${data_dir}/data/train.AH.seq --dev_conll_file $PWD/data/postags/ptb3-wsj-dev.proj.conllx.pos --dev_oracle_file ${data_dir}/data/dev.AH.seq --save_data $PWD/binarized/data+pre+inferpos.en.AH --pre_word_emb_file ${data_dir}/sskip.100.vectors --sent_len 150 --action_seq_len 300
+python preprocess.py --train_conll_file $PWD/data/postags/ptb3-wsj-train.conllx.pos \
+                     --train_oracle_file ${data_dir}/data/train.AH.seq \
+                     --dev_conll_file $PWD/data/postags/ptb3-wsj-dev.proj.conllx.pos \
+                     --dev_oracle_file ${data_dir}/data/dev.AH.seq \
+                     --save_data $PWD/binarized/data+pre+inferpos.en.AH \
+                     --pre_word_emb_file ${data_dir}/sskip.100.vectors \
+                     --sent_len 150 --action_seq_len 300
 ```
 
 #### Training
@@ -42,7 +54,8 @@ python preprocess.py --train_conll_file $PWD/data/postags/ptb3-wsj-train.conllx.
 You can explore all the available options by running `python train.py --help`, but to reproduce the paper the default is sufficient:
 
 ```
-python train.py --data_file $PWD/binarized/data+pre+inferpos.en.AH --model_file model --gpuid [gpu id]
+python train.py --data_file $PWD/binarized/data+pre+inferpos.en.AH \
+                --model_file model --gpuid [gpu id]
 ```
 
 #### Parsing
@@ -50,13 +63,18 @@ python train.py --data_file $PWD/binarized/data+pre+inferpos.en.AH --model_file 
 Here is what we use to generate our output. You are free to adjust the batch size as you wish, which does not change the output. The stack size, on the other hand, may need to be changed from corpus to corpus, although it doesn't need to be the same as the one you used for training as it doesn't change the number of parameters. We find 150 to be enough for PTB.
 
 ```
-python parse.py --input_file $PWD/data/postags/[conllx input]  --model_file [model file] --output_file out.seq --batch_size 80 --stack_size 150 --data_file $PWD/binarized/data+pre+inferpos.en.AH --pre_emb_file ${data_dir}/sskip.100.vectors
+python parse.py --input_file $PWD/data/postags/[conllx input]  \
+                --model_file [model file] --output_file out.seq \
+                --batch_size 80 --stack_size 150 \
+                --data_file $PWD/binarized/data+pre+inferpos.en.AH \
+                --pre_emb_file ${data_dir}/sskip.100.vectors
 ```
 
 The parser will output a transition sequence, which is not very helpful. To convert this back to conllx format, run the following script:
 
 ```
-python oracle2conll.py --fin out.seq --fout out.conllx --transSys AH --conllin $PWD/data/postags/[conllx input]
+python oracle2conll.py --fin out.seq --fout out.conllx --transSys AH \
+                       --conllin $PWD/data/postags/[conllx input]
 ```
 
 Finally, to evaluate arc F1 score, run the script from [arc-swift](https://github.com/qipeng/arc-swift) (remember that you need to switch back to Python 2).
